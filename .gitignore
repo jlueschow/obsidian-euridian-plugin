@@ -26,8 +26,9 @@ main.js
 *.iml
 out/
 
-# Claude Code (lokale Dev-Server-Konfiguration)
+# Claude Code (lokale Dev-Server-Konfiguration + private Dev-Notizen)
 .claude/
+CLAUDE.md
 
 # macOS
 .DS_Store
