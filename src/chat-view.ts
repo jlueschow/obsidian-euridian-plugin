@@ -181,6 +181,10 @@ class ChatTab {
 	messages: ChatMessage[] = [];
 	abortController: AbortController | null = null;
 	lastUsage: TokenUsage | null = null;
+	/** Dauer des finalen Antwort-Turns in ms (ohne Tool-Ausführung/Bestätigungen). */
+	lastResponseMs: number | null = null;
+	/** completionTokens ÷ Dauer des finalen Turns — grobe Geschwindigkeit. */
+	lastTokensPerSecond: number | null = null;
 	/** Scroll-Container mit den Nachrichten-Bubbles dieses Tabs. */
 	containerEl: HTMLElement;
 
@@ -981,6 +985,8 @@ export class ChatView extends ItemView {
 
 		tab.abortController = new AbortController();
 		tab.lastUsage = null;
+		tab.lastResponseMs = null;
+		tab.lastTokensPerSecond = null;
 		this.syncInputState();
 
 		let streamText = "";
@@ -1062,6 +1068,17 @@ export class ChatView extends ItemView {
 				thinkingEl
 			);
 
+			// t/s aus completionTokens des finalen Turns ÷ dessen Dauer.
+			// Cast nötig: TS narrowt tab.lastUsage fälschlich auf den Stand VOR
+			// dem await (frühere "= null"-Zuweisung), weil es nicht erkennt, dass
+			// die onUsage-Callback-Closure den Wert während runAgentLoop() neu setzt.
+			const currentUsage = tab.lastUsage as TokenUsage | null;
+			tab.lastTokensPerSecond = null;
+			if (currentUsage !== null && tab.lastResponseMs !== null && tab.lastResponseMs > 0) {
+				tab.lastTokensPerSecond =
+					currentUsage.completionTokens / (tab.lastResponseMs / 1000);
+			}
+
 			if (thinkingEl.isConnected) thinkingEl.remove();
 
 			if (streamText.trim()) {
@@ -1103,6 +1120,7 @@ export class ChatView extends ItemView {
 		thinkingEl: HTMLElement
 	): Promise<void> {
 		for (let i = 0; i < MAX_AGENT_ITERATIONS; i++) {
+			const turnStart = Date.now();
 			const result = await this.client.streamChat(
 				endpoint,
 				working,
@@ -1112,8 +1130,13 @@ export class ChatView extends ItemView {
 				tools
 			);
 
-			// Keine Werkzeuge angefordert → fertige Antwort.
-			if (result.toolCalls.length === 0) return;
+			// Keine Werkzeuge angefordert → fertige Antwort. Dauer NUR dieses
+			// finalen Turns merken (schließt Tool-Ausführung/Bestätigungen aus
+			// vorherigen Runden aus — sonst würde t/s durch Wartezeiten verzerrt).
+			if (result.toolCalls.length === 0) {
+				tab.lastResponseMs = Date.now() - turnStart;
+				return;
+			}
 
 			// Infomaniak verlangt tool_call_id = exakt 9 alphanumerische Zeichen.
 			// Abweichende IDs konsistent normalisieren (gilt für assistant + tool).
@@ -1393,11 +1416,39 @@ export class ChatView extends ItemView {
 		return id;
 	}
 
-	/** Rendert einen Werkzeug-Aktivitäts-Chip und gibt ihn zurück. */
+	/**
+	 * Rendert einen Werkzeug-Aktivitäts-Chip und gibt ihn zurück. Baut beim
+	 * ersten Chip lazy einen einklappbaren Header (Klick = auf-/zuklappen).
+	 * Standardmäßig eingeklappt: nur der jeweils neueste Chip ist sichtbar,
+	 * damit lange Werkzeug-Ketten nicht das Chat-Fenster fluten.
+	 */
 	private renderToolChip(toolsEl: HTMLElement, label: string): HTMLElement {
-		const chip = toolsEl.createDiv({ cls: "euridian-tool-chip" });
+		let listEl = toolsEl.querySelector<HTMLElement>(":scope > .euridian-tools-list");
+		let headerEl = toolsEl.querySelector<HTMLElement>(":scope > .euridian-tools-header");
+
+		if (!listEl || !headerEl) {
+			headerEl = toolsEl.createDiv({ cls: "euridian-tools-header" });
+			const chevron = headerEl.createSpan({ cls: "euridian-tools-chevron" });
+			setIcon(chevron, "chevron-right");
+			headerEl.createSpan({ cls: "euridian-tools-count" });
+			listEl = toolsEl.createDiv({ cls: "euridian-tools-list is-collapsed" });
+
+			const list = listEl;
+			headerEl.addEventListener("click", () => {
+				const collapsed = list.classList.toggle("is-collapsed");
+				headerEl!.classList.toggle("is-expanded", !collapsed);
+			});
+		}
+
+		const chip = listEl.createDiv({ cls: "euridian-tool-chip" });
 		setIcon(chip.createSpan({ cls: "euridian-tool-icon" }), "wrench");
 		chip.createSpan({ cls: "euridian-tool-label", text: label });
+
+		const count = listEl.childElementCount;
+		headerEl.querySelector(".euridian-tools-count")?.setText(
+			`${count} Werkzeug-Aufruf${count === 1 ? "" : "e"}`
+		);
+
 		if (this.activeTab.id === this.activeTabId) this.scrollToBottom();
 		return chip;
 	}
@@ -1624,6 +1675,9 @@ export class ChatView extends ItemView {
 		}
 		if (tab.lastUsage) {
 			status += ` · letzte Antwort: ${tab.lastUsage.totalTokens} Token`;
+			if (tab.lastTokensPerSecond) {
+				status += ` · ~${tab.lastTokensPerSecond.toFixed(1)} t/s`;
+			}
 		}
 		this.statusEl.setText(status);
 	}

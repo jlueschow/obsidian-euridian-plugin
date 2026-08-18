@@ -98,6 +98,12 @@ ask naturally:
 
 Each tool call shows as a chip in the chat. Write actions (create/append/edit)
 pause for your confirmation with a preview — nothing is written until you approve.
+When there's more than one tool call, only the latest is shown by default —
+click the header above the chips to expand/collapse the full list.
+
+The status bar shows the last response's token count and an approximate
+generation speed (`~N t/s`, based on the final answer turn only — tool
+execution and write-confirmation waits are excluded).
 
 **Not every model supports function calling reliably.** Local models around 4B
 parameters and above (e.g. `qwen3`, `mistral`) generally work; very small models
