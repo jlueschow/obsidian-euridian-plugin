@@ -1,0 +1,11 @@
+{
+  "id": "obsidian-euridian-plugin",
+  "name": "Euridian",
+  "version": "0.1.0",
+  "minAppVersion": "1.4.0",
+  "description": "AI Chat in Obsidian — Use local Ollama models (free) or Infomaniak Euria cloud API. Streaming responses, note context, privacy-focused.",
+  "author": "Johannes Luschow",
+  "authorUrl": "https://johannesluschow.com",
+  "fundingUrl": "https://github.com/sponsors/johannesluschow",
+  "isDesktopOnly": false
+}

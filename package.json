@@ -1,0 +1,33 @@
+{
+  "name": "obsidian-euridian-plugin",
+  "version": "0.1.0",
+  "description": "AI Chat in Obsidian — Ollama local or Infomaniak cloud",
+  "main": "dist/main.js",
+  "scripts": {
+    "dev": "node esbuild.config.mjs",
+    "build": "esbuild src/main.ts --bundle --format=cjs --platform=node --external:obsidian --external:@codemirror --minify --outfile=dist/main.js && node scripts/deploy.mjs",
+    "build:debug": "esbuild src/main.ts --bundle --format=cjs --platform=node --external:obsidian --external:@codemirror --outfile=dist/main.js && node scripts/deploy.mjs",
+    "deploy": "node scripts/deploy.mjs"
+  },
+  "keywords": [
+    "obsidian",
+    "ai",
+    "chat",
+    "ollama",
+    "infomaniak",
+    "qwen3",
+    "mistral"
+  ],
+  "author": "Johannes Luschow",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^16.18.0",
+    "@typescript-eslint/eslint-plugin": "^6.0.0",
+    "@typescript-eslint/parser": "^6.0.0",
+    "esbuild": "0.13.12",
+    "obsidian": "latest",
+    "tslib": "2.4.0",
+    "typescript": "4.7.4"
+  },
+  "dependencies": {}
+}
