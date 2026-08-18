@@ -5,7 +5,8 @@
   "main": "dist/main.js",
   "scripts": {
     "dev": "node esbuild.config.mjs",
-    "build": "esbuild src/main.ts --bundle --format=cjs --platform=node --external:obsidian --external:@codemirror --minify --outfile=dist/main.js && node scripts/deploy.mjs",
+    "package": "esbuild src/main.ts --bundle --format=cjs --platform=node --external:obsidian --external:@codemirror --minify --outfile=dist/main.js",
+    "build": "npm run package && node scripts/deploy.mjs",
     "build:debug": "esbuild src/main.ts --bundle --format=cjs --platform=node --external:obsidian --external:@codemirror --outfile=dist/main.js && node scripts/deploy.mjs",
     "deploy": "node scripts/deploy.mjs"
   },
