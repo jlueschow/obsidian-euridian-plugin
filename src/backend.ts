@@ -49,6 +49,30 @@ export function resolveEndpoint(settings: PluginSettings): ResolvedEndpoint {
 		};
 	}
 
+	if (settings.backend === "custom") {
+		const base = trimTrailingSlash(settings.customUrl.trim());
+		if (!base) {
+			throw new EuridianError(
+				"bad_request",
+				"Server-URL fehlt — in den Einstellungen eintragen."
+			);
+		}
+		if (!settings.customModel) {
+			throw new EuridianError(
+				"bad_request",
+				"Kein Modell gewählt — in den Einstellungen festlegen."
+			);
+		}
+		const key = settings.customApiKey.trim();
+		return {
+			chatUrl: `${base}/v1/chat/completions`,
+			modelsUrl: `${base}/v1/models`,
+			headers: key ? { Authorization: `Bearer ${key}` } : {},
+			model: settings.customModel,
+			label: "Eigener Server",
+		};
+	}
+
 	// --- Infomaniak Euria ---
 	const key = settings.infomaniakApiKey.trim();
 	const productId = settings.infomaniakProductId.trim();

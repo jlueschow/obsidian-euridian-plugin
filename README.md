@@ -2,7 +2,9 @@
 
 A native Obsidian plugin that brings an AI chat sidebar — and an optional AI agent
 with real read/write access to your vault — directly into Obsidian. Choose between
-**free local models** (Ollama) or **cloud inference** (Infomaniak Euria, Swiss/GDPR).
+**free local models** (Ollama), **cloud inference** (Infomaniak Euria, Swiss/GDPR),
+or **any OpenAI-compatible server you already have access to** (e.g. a
+university/company-hosted LLM).
 
 ## ⚠️ Vault Agent — please read before enabling
 
@@ -30,6 +32,8 @@ your vault: list notes, read notes, search, create notes, append to notes, and
 - 🏠 **Local models via Ollama** — free, runs entirely on your machine
 - ☁️ **Cloud via Infomaniak Euria** — Swiss/GDPR infrastructure, live model +
   pricing catalog in Settings
+- 🌐 **Any OpenAI-compatible server** — point Euridian at a URL + optional API key
+  (e.g. a self-hosted or university-network LLM); auto-detects available models
 - 📎 **Attachments** — drag & drop files/images from Finder, attach vault notes,
   or attach the current editor selection
 - ⚡ **Slash commands** — reusable prompt templates (`/summarize`, `/translate`, …),
@@ -63,6 +67,21 @@ installed models.
    and get an API key + Product ID (Account → AI Tools → API-Token).
 2. In Euridian settings: **Backend → Infomaniak**, paste API key + Product ID,
    click **Modelle & Preise laden**.
+
+### Option C: Your own OpenAI-compatible server
+
+Any server exposing the standard `/v1/chat/completions` and `/v1/models` routes
+works — self-hosted (vLLM, LiteLLM, llama.cpp server, LM Studio, …), or one
+provided by your university/company network.
+
+1. In Euridian settings: **Backend → Eigener Server**.
+2. Enter the **Server-URL** (base URL, no path — e.g. `https://llm.example.org`)
+   and, if required, an **API-Key**.
+3. Click **Modelle scannen** to auto-detect available models (falls back to a
+   manual text field if the server doesn't expose `/v1/models`).
+
+If the server sits behind a VPN or an internal network, make sure you're
+connected before testing.
 
 ### Open the chat
 
@@ -98,31 +117,34 @@ short and specific to what the agent needs.
 
 | Setting | Default | Notes |
 |---|---|---|
-| Backend | Ollama | Ollama (local) or Infomaniak (cloud) |
+| Backend | Ollama | Ollama (local), Infomaniak (cloud), or Eigener Server (any OpenAI-compatible endpoint) |
 | Vault-Agent | on | Enables function-calling tools |
 | Bestätigung vor Schreibaktionen | on | Confirms create/append/edit with a diff preview |
 | Aktuelle Notiz als Kontext | on | Sends the open note's content as context |
 | Euridian-Instruktionsdatei | `Euria.md` | Optional; empty = none |
 | System-Prompt | empty | Optional persona/style instructions |
-| Thinking / Reasoning | on (cloud) / off (Ollama) | Separate toggles per backend |
+| Thinking / Reasoning | on (Infomaniak/Eigener Server) / off (Ollama) | Separate toggles per backend |
 | Temperatur | 0.7 | Sampling temperature |
 | Max. Kontext-Nachrichten | 10 | Oldest messages are dropped beyond this |
 | Prompt-Vorlagen | 5 built-in | Add/remove your own in Settings |
 
 ## 🔐 Privacy
 
-| | Ollama (local) | Infomaniak (cloud) |
-|---|---|---|
-| Data leaves your machine | No | Yes — sent to Infomaniak's API |
-| Cost | Free | Free tier, then paid (see Infomaniak pricing) |
-| Jurisdiction | — | Switzerland, GDPR-compliant |
-| API key storage | — | Plain text in Obsidian's `data.json` (standard Obsidian behavior) |
+| | Ollama (local) | Infomaniak (cloud) | Eigener Server |
+|---|---|---|---|
+| Data leaves your machine | No | Yes — sent to Infomaniak's API | Yes — sent to that server |
+| Cost | Free | Free tier, then paid | Depends on the server/provider |
+| Jurisdiction | — | Switzerland, GDPR-compliant | Whatever applies to that server |
+| API key storage | — | Plain text in Obsidian's `data.json` (standard Obsidian behavior) | Same |
 
 **Anything you ask the AI about — including via the Vault Agent — is sent to
 whichever backend is active.** If you handle confidential or personal data (e.g.
 research participant data), use Ollama, and anonymize content in your vault
 *before* asking the AI about it, not after — a cloud request can't be undone
-once sent.
+once sent. **"Eigener Server" carries whatever privacy/data-handling policy
+that specific server operator has** — Euridian has no way to verify it, so
+check with the operator (e.g. your institution's IT/data protection office)
+before sending anything sensitive.
 
 ## ⚠️ Known limitations
 

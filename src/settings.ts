@@ -73,6 +73,11 @@ export const DEFAULT_SETTINGS: PluginSettings = {
 	infomaniakCatalogFetchedAt: 0,
 	infomaniakOnlyAvailable: true,
 
+	customUrl: "",
+	customApiKey: "",
+	customModel: "",
+	customModels: [],
+
 	includeCurrentNote: true,
 	euridianInstructionsPath: "Euria.md",
 	systemPrompt: "",
@@ -102,11 +107,15 @@ export class EuridianSettingTab extends PluginSettingTab {
 		// --- Backend-Auswahl ---
 		new Setting(containerEl)
 			.setName("Backend")
-			.setDesc("Lokal über Ollama (kostenlos) oder Infomaniak Euria (Cloud).")
+			.setDesc(
+				"Lokal über Ollama (kostenlos), Infomaniak Euria (Cloud), oder ein " +
+					"eigener OpenAI-kompatibler Server (z. B. im Hochschul-/Firmennetz)."
+			)
 			.addDropdown((dd) =>
 				dd
 					.addOption("ollama", "Ollama (lokal)")
 					.addOption("infomaniak", "Infomaniak Euria (Cloud)")
+					.addOption("custom", "Eigener Server")
 					.setValue(s.backend)
 					.onChange(async (value) => {
 						s.backend = value as PluginSettings["backend"];
@@ -118,6 +127,8 @@ export class EuridianSettingTab extends PluginSettingTab {
 		// --- Backend-spezifische Felder ---
 		if (s.backend === "ollama") {
 			this.renderOllamaSettings();
+		} else if (s.backend === "custom") {
+			this.renderCustomSettings();
 		} else {
 			this.renderInfomaniakSettings();
 		}
@@ -197,11 +208,11 @@ export class EuridianSettingTab extends PluginSettingTab {
 			});
 
 		new Setting(containerEl)
-			.setName("Thinking / Reasoning (Cloud / Infomaniak)")
+			.setName("Thinking / Reasoning (Infomaniak / Eigener Server)")
 			.setDesc(
-				'Aktiviert das "Nachdenken" des Modells für das Cloud-Backend. Aus → ' +
-					"schneller & günstiger (reasoning_effort: none). Für Ollama gibt es " +
-					"einen eigenen Schalter im Ollama-Bereich."
+				'Aktiviert das "Nachdenken" des Modells für Infomaniak und eigene ' +
+					"Server. Aus → schneller & günstiger (reasoning_effort: none). Für " +
+					"Ollama gibt es einen eigenen Schalter im Ollama-Bereich."
 			)
 			.addToggle((t) =>
 				t.setValue(s.enableThinking).onChange(async (v) => {
@@ -487,6 +498,143 @@ export class EuridianSettingTab extends PluginSettingTab {
 							new Notice(`✕ ${msg}`, 8000);
 						} finally {
 							btn.setDisabled(false).setButtonText("Laden");
+						}
+					})
+			);
+	}
+
+	/** Eigener OpenAI-kompatibler Server (z. B. Hochschul-/Firmennetz). */
+	private renderCustomSettings(): void {
+		const { containerEl } = this;
+		const s = this.plugin.settings;
+
+		containerEl.createEl("h3", { text: "Eigener Server" });
+		containerEl.createEl("p", {
+			cls: "setting-item-description",
+			text:
+				"Für jeden OpenAI-kompatiblen Endpunkt (z. B. selbst gehostet im " +
+				"Hochschul-/Firmennetz). Erwartet die Standard-Routen " +
+				"/v1/chat/completions und /v1/models unter der Basis-URL.",
+		});
+
+		new Setting(containerEl)
+			.setName("Server-URL")
+			.setDesc("Basis-URL ohne Pfad, z. B. https://llm.deine-hochschule.de")
+			.addText((t) =>
+				t
+					.setPlaceholder("https://llm.example.org")
+					.setValue(s.customUrl)
+					.onChange(async (v) => {
+						s.customUrl = v.trim();
+						await this.plugin.saveSettings();
+					})
+			);
+
+		new Setting(containerEl)
+			.setName("API-Key")
+			.setDesc("Nur falls der Server Authentifizierung verlangt. Sonst leer lassen.")
+			.addText((t) => {
+				t.setPlaceholder("Bearer-Token (optional)")
+					.setValue(s.customApiKey)
+					.onChange(async (v) => {
+						s.customApiKey = v.trim();
+						await this.plugin.saveSettings();
+					});
+				t.inputEl.type = "password";
+			});
+
+		this.renderCustomModelSelector();
+		this.renderCustomScanButton();
+		this.renderConnectionTest();
+	}
+
+	/** Modell-Auswahl für den eigenen Server: Dropdown aus gescannter Liste, sonst Freitext. */
+	private renderCustomModelSelector(): void {
+		const { containerEl } = this;
+		const s = this.plugin.settings;
+		const list = s.customModels;
+
+		if (list.length === 0) {
+			new Setting(containerEl)
+				.setName("Modell")
+				.setDesc("Noch nicht gescannt — unten „Modelle scannen“ klicken. Oder manuell:")
+				.addText((t) =>
+					t
+						.setPlaceholder("Modellname")
+						.setValue(s.customModel)
+						.onChange(async (v) => {
+							s.customModel = v.trim();
+							await this.plugin.saveSettings();
+						})
+				);
+			return;
+		}
+
+		new Setting(containerEl)
+			.setName("Modell")
+			.setDesc(`${list.length} Modell(e) gefunden.`)
+			.addDropdown((dd) => {
+				for (const name of list) dd.addOption(name, name);
+				if (s.customModel && !list.includes(s.customModel)) {
+					dd.addOption(s.customModel, `${s.customModel} (gewählt)`);
+				}
+				dd.setValue(s.customModel).onChange(async (v) => {
+					s.customModel = v;
+					await this.plugin.saveSettings();
+				});
+			});
+	}
+
+	/** Button: Modelle vom eigenen Server scannen (/v1/models). */
+	private renderCustomScanButton(): void {
+		const s = this.plugin.settings;
+		const desc =
+			s.customModels.length > 0
+				? `Aktuell bekannt: ${s.customModels.join(", ")}`
+				: "Liest die verfügbaren Modelle vom Server (falls unterstützt).";
+
+		new Setting(this.containerEl)
+			.setName("Modelle scannen")
+			.setDesc(desc)
+			.addButton((btn) =>
+				btn
+					.setButtonText("Scannen")
+					.setCta()
+					.onClick(async () => {
+						if (!s.customUrl.trim()) {
+							new Notice("Erst die Server-URL eintragen.");
+							return;
+						}
+						btn.setDisabled(true).setButtonText("Scanne …");
+						try {
+							const base = s.customUrl.trim().replace(/\/+$/, "");
+							const key = s.customApiKey.trim();
+							const models = await this.client.listModels({
+								chatUrl: "",
+								modelsUrl: `${base}/v1/models`,
+								headers: key ? { Authorization: `Bearer ${key}` } : {},
+								model: "",
+								label: "Eigener Server",
+							});
+							s.customModels = models;
+							if (models.length > 0 && !models.includes(s.customModel)) {
+								s.customModel = models[0];
+							}
+							await this.plugin.saveSettings();
+							new Notice(
+								models.length
+									? `✓ ${models.length} Modell(e) gefunden.`
+									: "Keine Modelle gefunden — Modellname manuell eintragen."
+							);
+							this.display();
+						} catch (err) {
+							const msg =
+								err instanceof EuridianError
+									? err.message
+									: `Unbekannter Fehler: ${String(err)}`;
+							new Notice(`✕ ${msg}`, 8000);
+						} finally {
+							btn.setDisabled(false).setButtonText("Scannen");
 						}
 					})
 			);

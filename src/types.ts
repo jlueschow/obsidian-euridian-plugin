@@ -67,7 +67,7 @@ export interface PromptTemplate {
  * Bewusst als String-Union, damit später weitere lokale Backends (z. B.
  * "lmstudio", "llamacpp") ohne Bruch ergänzt werden können.
  */
-export type Backend = "ollama" | "infomaniak";
+export type Backend = "ollama" | "infomaniak" | "custom";
 
 /**
  * Aufgelöster Endpunkt: alles, was der API-Client für genau einen Request
@@ -147,6 +147,15 @@ export interface PluginSettings {
 	infomaniakCatalogFetchedAt: number;
 	/** Nur aktuell verfügbare ("ready") Modelle im Dropdown zeigen. */
 	infomaniakOnlyAvailable: boolean;
+
+	// --- Eigener Server (z. B. selbst gehosteter LLM-Endpunkt) ---
+	/** Basis-URL, z. B. "https://llm.example.org". Ohne Pfad-Suffix. */
+	customUrl: string;
+	/** Optionaler Bearer-Token. Leer = kein Authorization-Header. */
+	customApiKey: string;
+	customModel: string;
+	/** Gescannte Modelle (von /v1/models), falls der Server das unterstützt. */
+	customModels: string[];
 
 	// --- Verhalten / Kontext ---
 	/** Aktuelle Notiz automatisch als System-Kontext mitsenden. */

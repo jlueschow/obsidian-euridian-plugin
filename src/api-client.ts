@@ -501,6 +501,9 @@ export class EuridianApiClient {
 		if (endpoint.label === "Ollama") {
 			return "Läuft der Server? (`ollama serve`)";
 		}
+		if (endpoint.label === "Eigener Server") {
+			return "Server-URL korrekt? Ggf. VPN/Netzwerk nötig, um den Server zu erreichen.";
+		}
 		return "Internetverbindung prüfen.";
 	}
 }
