@@ -142,7 +142,7 @@ once sent.
 ## 🔧 Development
 
 ```bash
-git clone https://github.com/johannesluschow/obsidian-euridian-plugin
+git clone https://github.com/jlueschow/obsidian-euridian-plugin
 cd obsidian-euridian-plugin
 npm install
 
