@@ -186,6 +186,7 @@ export class ChatView extends ItemView {
 
 	/** Gecachte Ollama-Modellliste (lazy geladen). */
 	private ollamaModels: string[] | null = null;
+	private customModels: string[] | null = null;
 
 	constructor(leaf: WorkspaceLeaf, plugin: EuridianPlugin) {
 		super(leaf);
@@ -284,10 +285,13 @@ export class ChatView extends ItemView {
 		this.modelSelectEl.addEventListener("change", async () => {
 			await this.onModelChanged(this.modelSelectEl.value);
 		});
-		// Beim Öffnen des Dropdowns ggf. Ollama-Modelle nachladen.
+		// Beim Öffnen des Dropdowns ggf. Modelle nachladen (Ollama/eigener Server).
 		this.modelSelectEl.addEventListener("focus", () => {
-			if (this.plugin.settings.backend === "ollama" && !this.ollamaModels) {
+			const backend = this.plugin.settings.backend;
+			if (backend === "ollama" && !this.ollamaModels) {
 				void this.loadOllamaModels();
+			} else if (backend === "custom" && !this.customModels) {
+				void this.loadCustomModels();
 			}
 		});
 	}
@@ -730,7 +734,9 @@ export class ChatView extends ItemView {
 	/** Trägt den aktuell aktiven Modellnamen je Backend ein. */
 	private currentModel(): string {
 		const s = this.plugin.settings;
-		return s.backend === "ollama" ? s.ollamaModel : s.infomaniakModel;
+		if (s.backend === "ollama") return s.ollamaModel;
+		if (s.backend === "custom") return s.customModel;
+		return s.infomaniakModel;
 	}
 
 	/** Befüllt das Modell-Dropdown abhängig vom Backend. */
@@ -748,6 +754,14 @@ export class ChatView extends ItemView {
 				this.ollamaModels ??
 				(s.ollamaModels.length
 					? s.ollamaModels.slice()
+					: current
+						? [current]
+						: []);
+		} else if (s.backend === "custom") {
+			names =
+				this.customModels ??
+				(s.customModels.length
+					? s.customModels.slice()
 					: current
 						? [current]
 						: []);
@@ -787,6 +801,7 @@ export class ChatView extends ItemView {
 		if (!value) return;
 		const s = this.plugin.settings;
 		if (s.backend === "ollama") s.ollamaModel = value;
+		else if (s.backend === "custom") s.customModel = value;
 		else s.infomaniakModel = value;
 		await this.plugin.saveSettings();
 		new Notice(`Modell: ${this.shortModel(value)}`);
@@ -804,6 +819,19 @@ export class ChatView extends ItemView {
 		} catch {
 			// Das Freitext-Modell bleibt nutzbar; kein harter Fehler nötig.
 			this.ollamaModels = [];
+		}
+	}
+
+	/** Lädt die Modellliste des eigenen Servers lazy und aktualisiert das Dropdown. */
+	private async loadCustomModels(): Promise<void> {
+		try {
+			const endpoint = resolveEndpoint(this.plugin.settings);
+			this.customModels = await this.client.listModels(endpoint);
+			this.plugin.settings.customModels = this.customModels.slice();
+			await this.plugin.saveSettings();
+			this.populateModelSelect();
+		} catch {
+			this.customModels = [];
 		}
 	}
 
