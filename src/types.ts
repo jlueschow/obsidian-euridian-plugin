@@ -181,6 +181,16 @@ export interface PluginSettings {
 	confirmBeforeWrite: boolean;
 	/** Wiederverwendbare Prompt-Vorlagen (Slash-Commands im Chat). */
 	promptTemplates: PromptTemplate[];
+
+	// --- Websuche (optional, unabhängig vom Vault-Agent) ---
+	/**
+	 * Gibt dem Agenten ein Websuche-Werkzeug (Brave Search API). Läuft immer
+	 * lokal über die Internetverbindung des Nutzers — nützlich, wenn das
+	 * Modell selbst auf einem Server ohne Internetzugang läuft. Default AUS.
+	 */
+	enableWebSearch: boolean;
+	/** Brave-Search-API-Key (kostenloser Tier verfügbar). */
+	braveApiKey: string;
 }
 
 /** Ein vom Modell angeforderter Tool-Aufruf (OpenAI-Format). */

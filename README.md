@@ -103,6 +103,23 @@ pause for your confirmation with a preview — nothing is written until you appr
 parameters and above (e.g. `qwen3`, `mistral`) generally work; very small models
 (≤1B) are unreliable. See **Known limitations** below for backend-specific caveats.
 
+## 🌐 Web search (optional)
+
+Gives the agent a `search_web` tool (via the [Brave Search API](https://brave.com/search/api/)).
+**Off by default** — it's a separate opt-in toggle from the Vault Agent, and the
+two can be enabled independently.
+
+The search itself always runs **locally, through your machine's own internet
+connection** — not through whichever backend answers your chat. This means it
+works even if your model runs on a server with no internet access of its own
+(e.g. an internal/offline network): the model asks for a search, Euridian
+performs it locally, and returns the results as text.
+
+1. Get a free API key at [brave.com/search/api](https://brave.com/search/api/)
+   (free tier: 2,000 queries/month).
+2. Settings → **Websuche aktivieren**, paste the key, optionally click
+   **Testen** to verify.
+
 ## 📝 Custom instructions file
 
 Point Euridian at a short markdown file (Settings → **Euridian-Instruktionsdatei**,
@@ -127,6 +144,7 @@ short and specific to what the agent needs.
 | Temperatur | 0.7 | Sampling temperature |
 | Max. Kontext-Nachrichten | 10 | Oldest messages are dropped beyond this |
 | Prompt-Vorlagen | 5 built-in | Add/remove your own in Settings |
+| Websuche aktivieren | off | Adds a `search_web` tool (Brave Search API), independent of Vault-Agent |
 
 ## 🔐 Privacy
 
@@ -145,6 +163,10 @@ once sent. **"Eigener Server" carries whatever privacy/data-handling policy
 that specific server operator has** — Euridian has no way to verify it, so
 check with the operator (e.g. your institution's IT/data protection office)
 before sending anything sensitive.
+
+**If Web search is enabled,** whatever the model asks the `search_web` tool
+for is sent to Brave's API, separately from and in addition to your chosen
+chat backend — see [Brave's privacy policy](https://brave.com/privacy/search/).
 
 ## ⚠️ Known limitations
 
@@ -192,7 +214,8 @@ src/
 ├── api-client.ts              # OpenAI-compatible HTTP client (Ollama + Infomaniak)
 ├── backend.ts                  # Endpoint resolution per backend
 ├── vault-tools.ts                # Vault Agent tool definitions + execution
-├── model-catalog.ts               # Infomaniak model/pricing catalog
+├── web-tools.ts                   # Web search tool (Brave Search API)
+├── model-catalog.ts                # Infomaniak model/pricing catalog
 ├── inline-edit.ts                  # Inline-Edit modal
 ├── confirm-write-modal.ts           # Write-confirmation modal with diff
 ├── diff.ts                           # Shared word-diff (LCS)

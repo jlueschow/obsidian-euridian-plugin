@@ -6,6 +6,7 @@ import { App, Notice, PluginSettingTab, Setting } from "obsidian";
 import { EuridianApiClient } from "./api-client";
 import { resolveEndpoint } from "./backend";
 import { fetchCatalog } from "./model-catalog";
+import { searchWeb } from "./web-tools";
 import {
 	CatalogEntry,
 	EuridianError,
@@ -87,6 +88,9 @@ export const DEFAULT_SETTINGS: PluginSettings = {
 	enableVaultAgent: true,
 	confirmBeforeWrite: true,
 	promptTemplates: DEFAULT_TEMPLATES,
+
+	enableWebSearch: false,
+	braveApiKey: "",
 };
 
 export class EuridianSettingTab extends PluginSettingTab {
@@ -251,7 +255,78 @@ export class EuridianSettingTab extends PluginSettingTab {
 					})
 			);
 
+		this.renderWebSearchSettings();
 		this.renderPromptTemplates();
+	}
+
+	/** Websuche (optional, unabhängig vom Vault-Agent) — Brave Search API. */
+	private renderWebSearchSettings(): void {
+		const { containerEl } = this;
+		const s = this.plugin.settings;
+
+		containerEl.createEl("h3", { text: "Websuche (optional)" });
+		containerEl.createEl("p", {
+			cls: "setting-item-description",
+			text:
+				"Gibt dem Agenten ein Websuche-Werkzeug. Läuft immer lokal über " +
+				"deinen Rechner — unabhängig davon, ob dein gewähltes Backend selbst " +
+				"Internetzugang hat. Nützlich z. B. bei einem Server im internen " +
+				"Netz ohne eigene Internetverbindung.",
+		});
+
+		new Setting(containerEl)
+			.setName("Websuche aktivieren")
+			.setDesc(
+				'Fügt dem Agenten das Werkzeug "search_web" hinzu (Brave Search API).'
+			)
+			.addToggle((t) =>
+				t.setValue(s.enableWebSearch).onChange(async (v) => {
+					s.enableWebSearch = v;
+					await this.plugin.saveSettings();
+				})
+			);
+
+		new Setting(containerEl)
+			.setName("Brave Search API-Key")
+			.setDesc(
+				"Kostenloser Key unter brave.com/search/api (Free-Tier: 2000 Anfragen/Monat)."
+			)
+			.addText((t) => {
+				t.setPlaceholder("BSA...")
+					.setValue(s.braveApiKey)
+					.onChange(async (v) => {
+						s.braveApiKey = v.trim();
+						await this.plugin.saveSettings();
+					});
+				t.inputEl.type = "password";
+			});
+
+		new Setting(containerEl)
+			.setName("Verbindung testen")
+			.setDesc("Führt eine Testsuche aus.")
+			.addButton((btn) =>
+				btn
+					.setButtonText("Testen")
+					.onClick(async () => {
+						if (!s.braveApiKey.trim()) {
+							new Notice("Erst den API-Key eintragen.");
+							return;
+						}
+						btn.setDisabled(true).setButtonText("Teste …");
+						try {
+							await searchWeb(s.braveApiKey.trim(), "test");
+							new Notice("✓ Brave Search erreichbar.");
+						} catch (err) {
+							const msg =
+								err instanceof EuridianError
+									? err.message
+									: `Unbekannter Fehler: ${String(err)}`;
+							new Notice(`✕ ${msg}`, 8000);
+						} finally {
+							btn.setDisabled(false).setButtonText("Testen");
+						}
+					})
+			);
 	}
 
 	/** Verwaltung der Prompt-Vorlagen (Slash-Commands): Liste + Löschen + Anlegen. */

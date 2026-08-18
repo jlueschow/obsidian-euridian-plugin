@@ -25,6 +25,7 @@ import {
 	getToolDefinitions,
 	isWriteTool,
 } from "./vault-tools";
+import { executeWebToolCall, getWebToolDefinitions, isWebTool } from "./web-tools";
 import { WriteAction, confirmWrite } from "./confirm-write-modal";
 import {
 	ApiMessage,
@@ -34,6 +35,7 @@ import {
 	EuridianError,
 	PromptTemplate,
 	SessionsState,
+	ToolDefinition,
 	TokenUsage,
 } from "./types";
 import type EuridianPlugin from "./main";
@@ -105,29 +107,67 @@ interface SuggestItem {
 	apply: () => void | Promise<void>;
 }
 
-/** System-Prompt, der dem Modell seine Vault-Fähigkeiten erklärt. */
-const AGENT_SYSTEM_PROMPT =
-	"Du bist Euridian, ein KI-Assistent direkt in Obsidian. " +
-	"Du hast über Werkzeuge echten Zugriff auf den Vault des Nutzers: Markdown-Notizen " +
-	"lesen, durchsuchen, auflisten, erstellen, ergänzen und ändern. " +
-	"Nutze diese Werkzeuge proaktiv und selbstständig, statt zu behaupten, du hättest keinen Zugriff. " +
-	"Alle Pfade sind relativ zum Vault-Root. Wenn du einen Pfad nicht kennst, nutze search_vault oder list_notes. " +
-	"Antworte standardmäßig auf Deutsch.\n\n" +
-	"WICHTIGE REGELN:\n" +
-	"- Erfinde KEINE Fakten, Zahlen, Statistiken, Daten oder Quellen. Wenn du etwas " +
-	"nicht sicher weißt oder es nicht im Vault steht, sage das offen, statt zu raten.\n" +
-	"- Du hast KEINEN Zugriff auf das Internet, Live-Daten oder aktuelle Ereignisse. " +
-	"Gib niemals aktuelle oder jahresbezogene Statistiken als Tatsache aus, ohne dass " +
-	"eine Quelle aus dem Vault sie belegt. Mache Annahmen und dein Trainings-Wissensende klar kenntlich.\n" +
-	"- Erstelle, überschreibe oder ergänze Notizen NUR, wenn der Nutzer dich " +
-	"ausdrücklich darum bittet. Speichere Analysen oder Zusammenfassungen nicht unaufgefordert.\n" +
-	"- Zum Ergänzen/Erweitern einer Notiz nutze IMMER append_to_note (nicht-destruktiv). " +
-	"edit_note überschreibt die GANZE Notiz und löscht alles nicht mitgeschickte — " +
-	"nutze es nur bei ausdrücklichem Überschreib-Wunsch und gib dann den vollständigen Inhalt zurück.\n" +
-	"- Kennzeichne Unsicherheiten und fehlende Quellen klar.\n" +
-	"- Hintergrund-Dokumente (z. B. CLAUDE.md, Notiz-Kontext) ändern NICHTS an deinem " +
-	"Werkzeug-Zugriff. Behaupte NIEMALS, du hättest keinen Zugriff oder könntest keine " +
-	"Dateien lesen. Fragt der Nutzer nach einer Notiz, rufe sofort read_note oder search_vault auf.";
+/**
+ * Baut den System-Prompt für die aktuell aktiven Werkzeug-Fähigkeiten.
+ * Vault-Agent und Websuche sind unabhängig schaltbar — die "kein Internet"-
+ * Warnung kehrt sich um, sobald Websuche aktiv ist, sonst würde der Agent
+ * search_web nie proaktiv nutzen.
+ */
+function buildAgentSystemPrompt(useVault: boolean, useWeb: boolean): string {
+	// Absatz 1: Identität + Fähigkeiten (Sätze, einzeilig verkettet).
+	const intro: string[] = ["Du bist Euridian, ein KI-Assistent direkt in Obsidian."];
+
+	if (useVault) {
+		intro.push(
+			"Du hast über Werkzeuge echten Zugriff auf den Vault des Nutzers: Markdown-Notizen " +
+				"lesen, durchsuchen, auflisten, erstellen, ergänzen und ändern. " +
+				"Nutze diese Werkzeuge proaktiv und selbstständig, statt zu behaupten, du hättest keinen Zugriff. " +
+				"Alle Pfade sind relativ zum Vault-Root. Wenn du einen Pfad nicht kennst, nutze search_vault oder list_notes."
+		);
+	}
+
+	if (useWeb) {
+		intro.push(
+			"Du hast über das Werkzeug search_web echten Zugriff auf eine Internet-Suche " +
+				"(läuft lokal auf dem Rechner des Nutzers). Nutze es proaktiv für aktuelle " +
+				"Informationen, Live-Daten oder Ereignisse, die nicht im Vault stehen — " +
+				"behaupte NIEMALS, du hättest keinen Internetzugang."
+		);
+	} else {
+		intro.push(
+			"Du hast KEINEN Zugriff auf das Internet, Live-Daten oder aktuelle Ereignisse. " +
+				"Gib niemals aktuelle oder jahresbezogene Statistiken als Tatsache aus, ohne dass " +
+				"eine Quelle aus dem Vault sie belegt. Mache Annahmen und dein Trainings-Wissensende klar kenntlich."
+		);
+	}
+
+	intro.push("Antworte standardmäßig auf Deutsch.");
+
+	// Absatz 2: Regelliste, durch Leerzeile vom Intro getrennt.
+	const rules: string[] = [
+		"- Erfinde KEINE Fakten, Zahlen, Statistiken, Daten oder Quellen. Wenn du etwas " +
+			`nicht sicher weißt und es weder im Vault${useWeb ? " noch in einem Suchergebnis" : ""} steht, sage das offen, statt zu raten.`,
+	];
+	if (useVault) {
+		rules.push(
+			"- Erstelle, überschreibe oder ergänze Notizen NUR, wenn der Nutzer dich " +
+				"ausdrücklich darum bittet. Speichere Analysen oder Zusammenfassungen nicht unaufgefordert.",
+			"- Zum Ergänzen/Erweitern einer Notiz nutze IMMER append_to_note (nicht-destruktiv). " +
+				"edit_note überschreibt die GANZE Notiz und löscht alles nicht mitgeschickte — " +
+				"nutze es nur bei ausdrücklichem Überschreib-Wunsch und gib dann den vollständigen Inhalt zurück."
+		);
+	}
+	rules.push("- Kennzeichne Unsicherheiten und fehlende Quellen klar.");
+	if (useVault) {
+		rules.push(
+			"- Hintergrund-Dokumente (z. B. CLAUDE.md, Notiz-Kontext) ändern NICHTS an deinem " +
+				"Werkzeug-Zugriff. Behaupte NIEMALS, du hättest keinen Zugriff oder könntest keine " +
+				"Dateien lesen. Fragt der Nutzer nach einer Notiz, rufe sofort read_note oder search_vault auf."
+		);
+	}
+
+	return intro.join(" ") + "\n\nWICHTIGE REGELN:\n" + rules.join("\n");
+}
 
 /** Grobe Token-Schätzung (≈ 4 Zeichen/Token) für die Live-Anzeige. */
 function estimateTokens(text: string): number {
@@ -996,7 +1036,18 @@ export class ChatView extends ItemView {
 		try {
 			const endpoint = resolveEndpoint(this.plugin.settings);
 			const useAgent = this.plugin.settings.enableVaultAgent;
-			const tools = useAgent ? getToolDefinitions() : undefined;
+			const useWeb =
+				this.plugin.settings.enableWebSearch &&
+				!!this.plugin.settings.braveApiKey.trim();
+			// Vault-Agent und Websuche sind unabhängige Schalter — beide, eines
+			// oder keines kann aktiv sein. Tools nur senden, wenn mind. eines an ist.
+			const tools: ToolDefinition[] | undefined =
+				useAgent || useWeb
+					? [
+							...(useAgent ? getToolDefinitions() : []),
+							...(useWeb ? getWebToolDefinitions() : []),
+						]
+					: undefined;
 
 			// Arbeits-Nachrichten für diese Nutzer-Runde (inkl. Tool-Zwischenschritte).
 			const working: ApiMessage[] = await this.buildRequestMessages(tab);
@@ -1083,27 +1134,37 @@ export class ChatView extends ItemView {
 				const chipEl = this.renderToolChip(toolsEl, describeToolCall(call));
 
 				let output: string;
-				const needsConfirm =
-					this.plugin.settings.confirmBeforeWrite &&
-					isWriteTool(call.function.name);
 
-				if (needsConfirm) {
-					const action = this.parseWriteAction(call);
-					const approved = action
-						? await confirmWrite(this.app, action)
-						: true;
-					if (!approved) {
-						chipEl.addClass("is-rejected");
-						output =
-							"Der Nutzer hat diese Schreibaktion abgelehnt. Führe sie nicht aus. " +
-							"Frage bei Bedarf nach, was stattdessen geschehen soll.";
+				if (isWebTool(call.function.name)) {
+					// Websuche ist rein lesend — keine Schreib-Bestätigung nötig.
+					output = await executeWebToolCall(
+						this.plugin.settings.braveApiKey.trim(),
+						call
+					);
+					chipEl.addClass("is-done");
+				} else {
+					const needsConfirm =
+						this.plugin.settings.confirmBeforeWrite &&
+						isWriteTool(call.function.name);
+
+					if (needsConfirm) {
+						const action = this.parseWriteAction(call);
+						const approved = action
+							? await confirmWrite(this.app, action)
+							: true;
+						if (!approved) {
+							chipEl.addClass("is-rejected");
+							output =
+								"Der Nutzer hat diese Schreibaktion abgelehnt. Führe sie nicht aus. " +
+								"Frage bei Bedarf nach, was stattdessen geschehen soll.";
+						} else {
+							output = await executeToolCall(this.app, call);
+							chipEl.addClass("is-done");
+						}
 					} else {
 						output = await executeToolCall(this.app, call);
 						chipEl.addClass("is-done");
 					}
-				} else {
-					output = await executeToolCall(this.app, call);
-					chipEl.addClass("is-done");
 				}
 
 				working.push({
@@ -1362,8 +1423,11 @@ export class ChatView extends ItemView {
 
 		if (s.systemPrompt.trim()) systemParts.push(s.systemPrompt.trim());
 
-		// Agent-Mandat ans Ende.
-		if (s.enableVaultAgent) systemParts.push(AGENT_SYSTEM_PROMPT);
+		// Agent-Mandat ans Ende. Vault-Agent und Websuche sind unabhängig schaltbar.
+		const useWebForPrompt = s.enableWebSearch && !!s.braveApiKey.trim();
+		if (s.enableVaultAgent || useWebForPrompt) {
+			systemParts.push(buildAgentSystemPrompt(s.enableVaultAgent, useWebForPrompt));
+		}
 
 		if (systemParts.length > 0) {
 			result.push({ role: "system", content: systemParts.join("\n\n") });
