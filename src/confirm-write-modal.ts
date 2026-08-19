@@ -131,3 +131,75 @@ export async function confirmWrite(
 		new ConfirmWriteModal(app, action, currentContent, resolve).open();
 	});
 }
+
+/**
+ * Bestätigungs-Modal für „In Notiz einfügen", wenn im Zieleditor gerade
+ * Text markiert ist. Der Chat merkt sich die zuletzt aktive Notiz auch dann,
+ * wenn deren Editor längst nicht mehr im Fokus/Blick ist (Fokuswechsel zum
+ * Chat-Panel) — die Auswahl dort kann veraltet und vom Nutzer vergessen sein.
+ * Ohne diese Bestätigung würde `replaceSelection` sie kommentarlos
+ * überschreiben (Security-Audit, 19.08.2026).
+ */
+class ConfirmInsertModal extends Modal {
+	private decided = false;
+
+	constructor(
+		app: App,
+		private noteName: string,
+		private selectedText: string,
+		private onDecision: (ok: boolean) => void
+	) {
+		super(app);
+	}
+
+	onOpen(): void {
+		this.modalEl.addClass("euridian-inline-modal");
+		const { contentEl } = this;
+		contentEl.empty();
+
+		contentEl.createEl("h3", { text: "In Notiz einfügen?" });
+		contentEl.createEl("div", {
+			cls: "euridian-inline-label euridian-warn",
+			text:
+				`⚠ In "${this.noteName}" ist noch Text markiert — dieser wird ` +
+				"durch die Antwort ersetzt. Ist das wirklich die richtige Notiz?",
+		});
+		contentEl.createEl("div", {
+			cls: "euridian-inline-original",
+			text: this.selectedText,
+		});
+
+		new Setting(contentEl)
+			.addButton((b) =>
+				b.setButtonText("Abbrechen").onClick(() => this.decide(false))
+			)
+			.addButton((b) =>
+				b
+					.setButtonText("Einfügen")
+					.setCta()
+					.onClick(() => this.decide(true))
+			);
+	}
+
+	onClose(): void {
+		this.decide(false);
+		this.contentEl.empty();
+	}
+
+	private decide(ok: boolean): void {
+		if (this.decided) return;
+		this.decided = true;
+		this.onDecision(ok);
+		this.close();
+	}
+}
+
+export function confirmInsert(
+	app: App,
+	noteName: string,
+	selection: string
+): Promise<boolean> {
+	return new Promise((resolve) => {
+		new ConfirmInsertModal(app, noteName, selection, resolve).open();
+	});
+}

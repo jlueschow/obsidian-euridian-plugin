@@ -26,7 +26,7 @@ import {
 	isWriteTool,
 } from "./vault-tools";
 import { executeWebToolCall, getWebToolDefinitions, isWebTool } from "./web-tools";
-import { WriteAction, confirmWrite } from "./confirm-write-modal";
+import { WriteAction, confirmInsert, confirmWrite } from "./confirm-write-modal";
 import {
 	ApiMessage,
 	AttachedImage,
@@ -72,6 +72,15 @@ const MAX_ATTACHMENT_CHARS = 50_000;
 
 /** Max. Zeichen der automatisch mitgeschickten aktuellen Notiz (gleiche Deckelung wie read_note). */
 const MAX_CURRENT_NOTE_CHARS = 40_000;
+
+/**
+ * Max. Zeichen der Euridian-Instruktionsdatei. Ohne Limit würde eine große
+ * Datei (z. B. aus einer synchronisierten/geteilten Vault) bei JEDER
+ * Nachricht unbegrenzt Kontext/Kosten verursachen — im Gegensatz zu jeder
+ * anderen Inhaltsquelle im Code war dieser Pfad bisher der einzige ohne
+ * Deckelung (Security-Audit, 19.08.2026).
+ */
+const MAX_INSTRUCTIONS_CHARS = 40_000;
 
 /** Max. Bildgröße in Bytes (Vision-APIs limitieren ohnehin). */
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
@@ -1732,8 +1741,13 @@ export class ChatView extends ItemView {
 	private async loadInstructionsFile(path: string): Promise<string | null> {
 		const f = this.app.vault.getAbstractFileByPath(path);
 		if (!(f instanceof TFile)) return null;
-		const content = await this.app.vault.cachedRead(f);
+		let content = await this.app.vault.cachedRead(f);
 		if (!content.trim()) return null;
+		if (content.length > MAX_INSTRUCTIONS_CHARS) {
+			content =
+				content.slice(0, MAX_INSTRUCTIONS_CHARS) +
+				`\n\n[… gekürzt, ${content.length - MAX_INSTRUCTIONS_CHARS} Zeichen ausgelassen]`;
+		}
 		return `<euridian_instructions path="${path}">\n${content}\n</euridian_instructions>`;
 	}
 
@@ -1849,14 +1863,27 @@ export class ChatView extends ItemView {
 		insertBtn.onclick = () => this.insertIntoNote(text);
 	}
 
-	private insertIntoNote(text: string): void {
+	private async insertIntoNote(text: string): Promise<void> {
 		const view = this.getContextMarkdownView();
 		if (!view) {
 			new Notice("Keine aktive Notiz zum Einfügen geöffnet.");
 			return;
 		}
+		const noteName = view.file?.basename ?? "Notiz";
+
+		// Nicht-leere Auswahl im Zieleditor → könnte aus einer Notiz stammen,
+		// die der Nutzer längst nicht mehr sieht (der Chat merkt sich die
+		// zuletzt aktive Notiz auch nach Fokuswechsel, siehe
+		// getContextMarkdownView). Erst bestätigen lassen, statt sie
+		// kommentarlos zu überschreiben.
+		const selection = view.editor.getSelection();
+		if (selection) {
+			const ok = await confirmInsert(this.app, noteName, selection);
+			if (!ok) return;
+		}
+
 		view.editor.replaceSelection(text);
-		new Notice("In Notiz eingefügt.");
+		new Notice(`In "${noteName}" eingefügt.`);
 	}
 
 	private async renderMarkdown(el: HTMLElement, markdown: string): Promise<void> {
@@ -1906,7 +1933,29 @@ export class ChatView extends ItemView {
 			(sum, m) => sum + estimateTokens(m.content),
 			0
 		);
-		let status = `~${historyTokens + inputTokens + attachmentTokens} Token im Kontext`;
+		// Größe der Instruktionsdatei einbeziehen (Byte-Größe reicht, kein
+		// vollständiges Lesen nötig) — macht ihren sonst unsichtbaren
+		// Kontext-/Kostenbeitrag im Zähler sichtbar (Security-Audit, 19.08.2026).
+		let instructionsTokens = 0;
+		if (this.plugin.settings.euridianInstructionsPath) {
+			const f = this.app.vault.getAbstractFileByPath(
+				this.plugin.settings.euridianInstructionsPath
+			);
+			if (f instanceof TFile) {
+				instructionsTokens = Math.ceil(
+					Math.min(f.stat.size, MAX_INSTRUCTIONS_CHARS) / 4
+				);
+			}
+		}
+		let status = `~${historyTokens + inputTokens + attachmentTokens + instructionsTokens} Token im Kontext`;
+		// Zeigt, WELCHE Notiz als Kontext mitgesendet würde — sonst nicht
+		// erkennbar, dass das die zuletzt aktive Notiz sein kann, auch wenn
+		// der Nutzer längst zu einer anderen gewechselt hat (Security-Audit,
+		// 19.08.2026).
+		if (this.plugin.settings.includeCurrentNote) {
+			const noteName = this.getContextMarkdownView()?.file?.basename;
+			if (noteName) status += ` · Notiz: ${noteName}`;
+		}
 		if (imageAttCount > 0) {
 			status += ` · ${imageAttCount} Bild${imageAttCount > 1 ? "er" : ""}`;
 		}
