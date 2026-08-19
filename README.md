@@ -143,7 +143,7 @@ short and specific to what the agent needs.
 | Backend | Ollama | Ollama (local), Infomaniak (cloud), or Eigener Server (any OpenAI-compatible endpoint) |
 | Vault-Agent | on | Enables function-calling tools |
 | Bestätigung vor Schreibaktionen | on | Confirms create/append/edit with a diff preview |
-| Aktuelle Notiz als Kontext | on | Sends the open note's content as context |
+| Aktuelle Notiz als Kontext | on | Sends the open note's content as context (capped at 40k characters, same as `read_note`) |
 | Euridian-Instruktionsdatei | `Euria.md` | Optional; empty = none |
 | System-Prompt | empty | Optional persona/style instructions |
 | Thinking / Reasoning | on (Infomaniak/Eigener Server) / off (Ollama) | Separate toggles per backend |
@@ -249,6 +249,14 @@ ollama serve                             # if not, start it
 **Chat won't load / plugin doesn't appear**
 - Reload Obsidian (`Cmd/Ctrl+R`), check the console (`Cmd/Ctrl+Shift+I`).
 - Confirm the plugin is enabled under Community Plugins.
+
+**"Ungültige Anfrage" / context length exceeded**
+- Some deployments cap the *usable* context well below the model's documented
+  maximum (e.g. a litellm proxy limiting a 262k-context model to 65,536 tokens
+  for memory reasons) — check with whoever runs the server.
+- Lower **Max. Kontext-Nachrichten** in Settings, and note that a very large
+  currently-open note or long agent tool-call chains (many `read_note`/
+  `search_web` calls in one turn) both add to the request size.
 
 **Request starts, then just stops (no error, no more text)**
 - Euridian aborts a hung stream after 90s of complete silence and shows a clear

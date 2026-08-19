@@ -48,6 +48,9 @@ const MAX_AGENT_ITERATIONS = 12;
 /** Max. Zeichen pro angehängter Textdatei (vermeidet Token-Explosion). */
 const MAX_ATTACHMENT_CHARS = 50_000;
 
+/** Max. Zeichen der automatisch mitgeschickten aktuellen Notiz (gleiche Deckelung wie read_note). */
+const MAX_CURRENT_NOTE_CHARS = 40_000;
+
 /** Max. Bildgröße in Bytes (Vision-APIs limitieren ohnehin). */
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 
@@ -1513,8 +1516,17 @@ export class ChatView extends ItemView {
 		const file = this.app.workspace.getActiveFile();
 		if (!file) return null;
 		const view = this.app.workspace.getActiveViewOfType(MarkdownView);
-		const content = view?.editor.getValue();
+		let content = view?.editor.getValue();
 		if (!content) return null;
+		// Gleiche Deckelung wie read_note (vault-tools.ts) — ohne Limit würde eine
+		// große offene Notiz bei JEDER Nachricht unbegrenzt Kontext verbrauchen und
+		// kann serverseitige Kontext-Limits sprengen (z. B. 65536 Token bei manchen
+		// Deployments, deutlich unter dem dokumentierten Modell-Maximum).
+		if (content.length > MAX_CURRENT_NOTE_CHARS) {
+			content =
+				content.slice(0, MAX_CURRENT_NOTE_CHARS) +
+				`\n\n[… gekürzt, ${content.length - MAX_CURRENT_NOTE_CHARS} Zeichen ausgelassen]`;
+		}
 		return `<current_note path="${file.path}">\n${content}\n</current_note>`;
 	}
 
