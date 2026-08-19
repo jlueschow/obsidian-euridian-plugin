@@ -235,7 +235,16 @@ function listNotes(app: App, folder?: string): string {
 	if (prefix) {
 		files = files.filter((f) => f.path.startsWith(prefix));
 	}
-	if (files.length === 0) return "Keine Notizen gefunden.";
+	if (files.length === 0) {
+		// Unterscheiden zwischen "Ordner existiert nicht" und "Ordner ist leer" —
+		// sonst sehen beide Fälle für das Modell identisch aus und es zieht
+		// falsche Schlüsse (z. B. eine veraltete Struktur-Referenz als reale,
+		// aber leere Ordner interpretieren statt als nicht existent).
+		if (prefix && !(app.vault.getAbstractFileByPath(prefix) instanceof TFolder)) {
+			return `Ordner "${folder}" existiert nicht in diesem Vault.`;
+		}
+		return "Keine Notizen gefunden.";
+	}
 
 	// Dateigröße kommt aus Obsidians Metadaten (file.stat), OHNE den Inhalt zu
 	// lesen — so kann das Modell leere/fast-leere Notizen direkt hier erkennen,
