@@ -1,6 +1,6 @@
 {
   "name": "obsidian-euridian-plugin",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "AI Chat in Obsidian — Ollama local or Infomaniak cloud",
   "main": "dist/main.js",
   "scripts": {
