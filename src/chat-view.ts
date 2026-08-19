@@ -45,6 +45,17 @@ export const VIEW_TYPE_EURIDIAN = "euridian-chat-view";
 /** Max. Agent-Iterationen (Tool-Aufruf → Antwort) pro Nutzer-Nachricht. */
 const MAX_AGENT_ITERATIONS = 12;
 
+/**
+ * Hartes Sicherheitsnetz gegen Kontext-Explosion: kumulative Zeichen aus ALLEN
+ * Werkzeug-Ergebnissen innerhalb EINER Nutzer-Anfrage (über alle Iterationen).
+ * ~37.500 Token — sicherer Puffer unter kleinsten bekannten Server-Limits
+ * (z. B. 65.536 Token bei manchen Deployments). Greift z. B. wenn ein Modell
+ * versucht, viele/große Notizen nacheinander per read_note komplett zu lesen,
+ * statt list_notes' Dateigröße zu nutzen (Prompt-Hinweis reicht nicht immer,
+ * v. a. bei kleineren Modellen).
+ */
+const MAX_TOOL_OUTPUT_CHARS_PER_TURN = 150_000;
+
 /** Max. Zeichen pro angehängter Textdatei (vermeidet Token-Explosion). */
 const MAX_ATTACHMENT_CHARS = 50_000;
 
@@ -1122,6 +1133,9 @@ export class ChatView extends ItemView {
 		toolsEl: HTMLElement,
 		thinkingEl: HTMLElement
 	): Promise<void> {
+		// Läuft über alle Iterationen dieser einen Nutzer-Anfrage mit.
+		let cumulativeToolOutputChars = 0;
+
 		for (let i = 0; i < MAX_AGENT_ITERATIONS; i++) {
 			const turnStart = Date.now();
 			const result = await this.client.streamChat(
@@ -1161,7 +1175,16 @@ export class ChatView extends ItemView {
 
 				let output: string;
 
-				if (isWebTool(call.function.name)) {
+				if (cumulativeToolOutputChars >= MAX_TOOL_OUTPUT_CHARS_PER_TURN) {
+					// Budget für diese Anfrage aufgebraucht — nicht mehr ausführen,
+					// sonst droht ein Kontext-Limit-Fehler des Backends.
+					chipEl.addClass("is-rejected");
+					output =
+						"Fehler: Zu viele/große Werkzeug-Ergebnisse in dieser Anfrage " +
+						"(Kontext-Budget erschöpft). Nutze list_notes' Dateigröße gezielter, " +
+						"statt viele Notizen einzeln mit read_note zu öffnen, oder fasse " +
+						"zusammen, was du bisher gefunden hast.";
+				} else if (isWebTool(call.function.name)) {
 					// Websuche ist rein lesend — keine Schreib-Bestätigung nötig.
 					output = await executeWebToolCall(
 						this.plugin.settings.braveApiKey.trim(),
@@ -1192,6 +1215,8 @@ export class ChatView extends ItemView {
 						chipEl.addClass("is-done");
 					}
 				}
+
+				cumulativeToolOutputChars += output.length;
 
 				working.push({
 					role: "tool",

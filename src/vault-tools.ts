@@ -46,7 +46,11 @@ export function getToolDefinitions(): ToolDefinition[] {
 			function: {
 				name: "list_notes",
 				description:
-					"Listet Markdown-Notizen im Vault auf, optional gefiltert auf einen Ordner (Präfix). Gibt Pfade relativ zum Vault-Root zurück.",
+					"Listet Markdown-Notizen im Vault auf (Pfad + Dateigröße in Byte), optional " +
+					"gefiltert auf einen Ordner (Präfix). NUTZE DIE DATEIGRÖSSE, um leere/fast-leere " +
+					"Notizen zu erkennen (⚠-Markierung bei ≤50 Byte) — rufe dafür NICHT read_note " +
+					"für jede einzelne Datei auf, das ist unnötig teuer und sprengt bei vielen " +
+					"Dateien den Kontext. read_note nur für Notizen nutzen, deren Inhalt du wirklich brauchst.",
 				parameters: {
 					type: "object",
 					properties: {
@@ -222,6 +226,9 @@ export async function executeToolCall(
 
 // ------------------------------------------------------------------ Lesen
 
+/** Ab dieser Bytegröße gilt eine Notiz in der list_notes-Ausgabe als "nahezu leer". */
+const NEAR_EMPTY_BYTES = 50;
+
 function listNotes(app: App, folder?: string): string {
 	const prefix = folder ? normalizePath(folder) : "";
 	let files = app.vault.getMarkdownFiles();
@@ -230,10 +237,18 @@ function listNotes(app: App, folder?: string): string {
 	}
 	if (files.length === 0) return "Keine Notizen gefunden.";
 
-	const paths = files.slice(0, MAX_LIST).map((f) => f.path);
+	// Dateigröße kommt aus Obsidians Metadaten (file.stat), OHNE den Inhalt zu
+	// lesen — so kann das Modell leere/fast-leere Notizen direkt hier erkennen,
+	// statt jede einzeln per read_note zu öffnen (teuer, sprengt schnell den
+	// Kontext bei vielen Dateien).
+	const lines = files.slice(0, MAX_LIST).map((f) => {
+		const size = f.stat.size;
+		const flag = size <= NEAR_EMPTY_BYTES ? "  ⚠ nahezu leer" : "";
+		return `${f.path} (${size} B)${flag}`;
+	});
 	const more =
 		files.length > MAX_LIST ? `\n… und ${files.length - MAX_LIST} weitere.` : "";
-	return `${files.length} Notiz(en):\n${paths.join("\n")}${more}`;
+	return `${files.length} Notiz(en) mit Dateigröße (⚠ = ≤${NEAR_EMPTY_BYTES} Byte, vermutlich leer/nur Titel):\n${lines.join("\n")}${more}`;
 }
 
 async function readNote(app: App, path: string): Promise<string> {

@@ -254,9 +254,14 @@ ollama serve                             # if not, start it
 - Some deployments cap the *usable* context well below the model's documented
   maximum (e.g. a litellm proxy limiting a 262k-context model to 65,536 tokens
   for memory reasons) — check with whoever runs the server.
-- Lower **Max. Kontext-Nachrichten** in Settings, and note that a very large
-  currently-open note or long agent tool-call chains (many `read_note`/
-  `search_web` calls in one turn) both add to the request size.
+- Broad requests ("find all empty notes", "summarize everything about X") can
+  make the agent call `read_note` on many files in one turn — each one adds
+  its full content to the request. `list_notes` now includes each file's size
+  so the model can often answer without reading every file, and a per-turn
+  tool-output budget (~37.5k tokens, cumulative across `read_note`/
+  `search_web`/etc.) stops it before a request gets that large — but a very
+  broad ask can still legitimately need more context than a tight server
+  limit allows. Narrow the request, or lower **Max. Kontext-Nachrichten**.
 
 **Request starts, then just stops (no error, no more text)**
 - Euridian aborts a hung stream after 90s of complete silence and shows a clear
