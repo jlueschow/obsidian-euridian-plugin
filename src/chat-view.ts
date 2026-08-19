@@ -253,6 +253,17 @@ export class ChatView extends ItemView {
 	/** Zähler für verschachtelte dragenter/dragleave-Events. */
 	private dragDepth = 0;
 
+	/**
+	 * Letztes Leaf mit einer MarkdownView, BEVOR der Fokus in dieses Panel
+	 * wanderte. `getActiveViewOfType(MarkdownView)` liefert `null`, sobald
+	 * Euridians eigenes Sidebar-Panel aktiv wird (z. B. durch Klick ins
+	 * Eingabefeld) — genau dann, wenn Nutzer typischerweise mit der Notiz
+	 * interagieren wollen (Auswahl anhängen, Vorlage mit {{selection}},
+	 * Antwort einfügen). Ohne diesen Fallback brechen all diese Features
+	 * lautlos ab, sobald der Chat fokussiert ist.
+	 */
+	private lastActiveMarkdownLeaf: WorkspaceLeaf | null = null;
+
 	// --- Suggest-Popup (Slash-Commands „/" und @mention „@") ---
 	private suggestEl: HTMLElement | null = null;
 	private suggestOpen = false;
@@ -293,10 +304,34 @@ export class ChatView extends ItemView {
 		this.bodyEl = root.createDiv({ cls: "euridian-body" });
 		this.buildInputArea(root);
 		this.setupDragAndDrop(root);
+		this.trackActiveMarkdownLeaf();
 
 		// Gespeicherte Tabs wiederherstellen oder mit einem leeren Tab starten.
 		await this.restoreSessions();
 		this.populateModelSelect();
+	}
+
+	/** Merkt sich fortlaufend das zuletzt aktive Markdown-Leaf — siehe lastActiveMarkdownLeaf. */
+	private trackActiveMarkdownLeaf(): void {
+		const initial = this.app.workspace.getActiveViewOfType(MarkdownView);
+		this.lastActiveMarkdownLeaf =
+			initial?.leaf ?? this.app.workspace.getLeavesOfType("markdown")[0] ?? null;
+
+		this.registerEvent(
+			this.app.workspace.on("active-leaf-change", (leaf) => {
+				if (leaf?.view instanceof MarkdownView) {
+					this.lastActiveMarkdownLeaf = leaf;
+				}
+			})
+		);
+	}
+
+	/** Liefert die Notiz, mit der zuletzt gearbeitet wurde — auch wenn der Chat gerade fokussiert ist. */
+	private getContextMarkdownView(): MarkdownView | null {
+		const active = this.app.workspace.getActiveViewOfType(MarkdownView);
+		if (active) return active;
+		const leafView = this.lastActiveMarkdownLeaf?.view;
+		return leafView instanceof MarkdownView ? leafView : null;
 	}
 
 	/** Externe Dateien per Drag & Drop aus dem Finder annehmen. */
@@ -624,7 +659,7 @@ export class ChatView extends ItemView {
 		text: string;
 		cursor: number | null;
 	} {
-		const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+		const view = this.getContextMarkdownView();
 		const selection = view?.editor.getSelection() ?? "";
 		const note = view?.editor.getValue() ?? "";
 		const title = view?.file?.basename ?? "";
@@ -1269,7 +1304,7 @@ export class ChatView extends ItemView {
 
 	/** Holt die aktuelle Editor-Selektion und hängt sie als Kontext an. */
 	private attachCurrentSelection(): void {
-		const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+		const view = this.getContextMarkdownView();
 		const sel = view?.editor.getSelection() ?? "";
 		if (!sel.trim()) {
 			new Notice("Kein Text markiert.");
@@ -1703,9 +1738,9 @@ export class ChatView extends ItemView {
 	}
 
 	private getCurrentNoteContext(): string | null {
-		const file = this.app.workspace.getActiveFile();
+		const view = this.getContextMarkdownView();
+		const file = view?.file;
 		if (!file) return null;
-		const view = this.app.workspace.getActiveViewOfType(MarkdownView);
 		let content = view?.editor.getValue();
 		if (!content) return null;
 		// Gleiche Deckelung wie read_note (vault-tools.ts) — ohne Limit würde eine
@@ -1815,7 +1850,7 @@ export class ChatView extends ItemView {
 	}
 
 	private insertIntoNote(text: string): void {
-		const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+		const view = this.getContextMarkdownView();
 		if (!view) {
 			new Notice("Keine aktive Notiz zum Einfügen geöffnet.");
 			return;
@@ -1830,7 +1865,7 @@ export class ChatView extends ItemView {
 			this.app,
 			markdown,
 			el,
-			this.app.workspace.getActiveFile()?.path ?? "",
+			this.getContextMarkdownView()?.file?.path ?? "",
 			this
 		);
 	}
