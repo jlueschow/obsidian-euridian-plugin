@@ -85,6 +85,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
 	enableThinking: true,
 	temperature: 0.7,
 	maxContextMessages: 10,
+	autoCompactHistory: true,
 	enableVaultAgent: true,
 	confirmBeforeWrite: true,
 	promptTemplates: DEFAULT_TEMPLATES,
@@ -242,7 +243,7 @@ export class EuridianSettingTab extends PluginSettingTab {
 		new Setting(containerEl)
 			.setName("Max. Kontext-Nachrichten")
 			.setDesc(
-				"Älteste Nachrichten werden über dieser Grenze aus dem Kontext entfernt (Token-Sparen)."
+				"Älteste Nachrichten werden über dieser Grenze aus dem vollständigen Kontext entfernt (Token-Sparen)."
 			)
 			.addSlider((sl) =>
 				sl
@@ -253,6 +254,20 @@ export class EuridianSettingTab extends PluginSettingTab {
 						s.maxContextMessages = v;
 						await this.plugin.saveSettings();
 					})
+			);
+
+		new Setting(containerEl)
+			.setName("Verlauf automatisch komprimieren")
+			.setDesc(
+				"Statt entfernte Nachrichten komplett zu verwerfen, per LLM-Kurzfassung " +
+					"erhalten (ein zusätzlicher Hintergrund-Request, sobald die Grenze " +
+					"erstmals überschritten wird). Analog zu Claude Codes Auto-Compact."
+			)
+			.addToggle((t) =>
+				t.setValue(s.autoCompactHistory).onChange(async (v) => {
+					s.autoCompactHistory = v;
+					await this.plugin.saveSettings();
+				})
 			);
 
 		this.renderWebSearchSettings();

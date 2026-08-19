@@ -148,7 +148,8 @@ short and specific to what the agent needs.
 | System-Prompt | empty | Optional persona/style instructions |
 | Thinking / Reasoning | on (Infomaniak/Eigener Server) / off (Ollama) | Separate toggles per backend |
 | Temperatur | 0.7 | Sampling temperature |
-| Max. Kontext-Nachrichten | 10 | Oldest messages are dropped beyond this |
+| Max. Kontext-Nachrichten | 10 | Oldest messages fall out of the full-text context beyond this |
+| Verlauf automatisch komprimieren | on | Instead of dropping old messages outright, summarizes them via one background LLM call (Claude Code-style auto-compact) |
 | Prompt-Vorlagen | 5 built-in | Add/remove your own in Settings |
 | Websuche aktivieren | off | Adds a `search_web` tool (Brave Search API), independent of Vault-Agent |
 
@@ -252,16 +253,27 @@ ollama serve                             # if not, start it
 
 **"Ungültige Anfrage" / context length exceeded**
 - Some deployments cap the *usable* context well below the model's documented
-  maximum (e.g. a litellm proxy limiting a 262k-context model to 65,536 tokens
-  for memory reasons) — check with whoever runs the server.
+  maximum (e.g. a litellm/vLLM proxy launched with a `--max-model-len` far
+  below a 262k-context model's architectural max, typically to fit the
+  KV-cache of several concurrently hosted models into shared GPU memory) —
+  check with whoever runs the server if you hit this often.
 - Broad requests ("find all empty notes", "summarize everything about X") can
   make the agent call `read_note` on many files in one turn — each one adds
-  its full content to the request. `list_notes` now includes each file's size
-  so the model can often answer without reading every file, and a per-turn
-  tool-output budget (~37.5k tokens, cumulative across `read_note`/
-  `search_web`/etc.) stops it before a request gets that large — but a very
-  broad ask can still legitimately need more context than a tight server
-  limit allows. Narrow the request, or lower **Max. Kontext-Nachrichten**.
+  its full content to the request. Several safety nets reduce this risk:
+  - `list_notes` includes each file's size, so the model can often answer
+    without reading every file.
+  - A per-turn tool-output budget (~37.5k tokens, cumulative across
+    `read_note`/`search_web`/etc.) stops the agent before a single request's
+    tool results balloon out of control.
+  - Once a single request's own tool-call rounds exceed ~25k tokens, Euridian
+    auto-compacts the older rounds into a short LLM-generated summary and
+    keeps going instead of just failing — the same idea as Claude Code's
+    auto-compact, applied within one agent run.
+  - Long-running conversations get the same treatment across turns: messages
+    that fall out of **Max. Kontext-Nachrichten** are summarized instead of
+    silently dropped (toggle: **Verlauf automatisch komprimieren**).
+  - A very broad ask can still legitimately need more context than a tight
+    server limit allows — narrow the request if it keeps failing.
 
 **Request starts, then just stops (no error, no more text)**
 - Euridian aborts a hung stream after 90s of complete silence and shows a clear

@@ -34,6 +34,7 @@ import {
 	ContentPart,
 	EuridianError,
 	PromptTemplate,
+	ResolvedEndpoint,
 	SessionsState,
 	ToolDefinition,
 	TokenUsage,
@@ -55,6 +56,16 @@ const MAX_AGENT_ITERATIONS = 12;
  * v. a. bei kleineren Modellen).
  */
 const MAX_TOOL_OUTPUT_CHARS_PER_TURN = 150_000;
+
+/**
+ * Zusätzlich zum harten Zeichen-Budget: sobald die Werkzeug-Runden EINER
+ * Anfrage (innerhalb von runAgentLoop) diese Größe überschreiten, werden alle
+ * bis auf die letzte Runde per LLM-Kurzfassung komprimiert. Verhindert, dass
+ * lange Multi-Schritt-Analysen (z. B. "analysiere die ganze Vault") den
+ * Server-Kontext sprengen, obwohl jedes einzelne Tool-Ergebnis für sich unter
+ * dem Zeichen-Budget bleibt — analog zu Claude Codes Auto-Compact.
+ */
+const WORKING_COMPACT_THRESHOLD_CHARS = 100_000;
 
 /** Max. Zeichen pro angehängter Textdatei (vermeidet Token-Explosion). */
 const MAX_ATTACHMENT_CHARS = 50_000;
@@ -199,6 +210,15 @@ class ChatTab {
 	lastResponseMs: number | null = null;
 	/** completionTokens ÷ Dauer des finalen Turns — grobe Geschwindigkeit. */
 	lastTokensPerSecond: number | null = null;
+	/**
+	 * LLM-generierte Kurzfassung der Nachrichten, die wegen `maxContextMessages`
+	 * nicht mehr im Volltext mitgeschickt werden. `null` = noch keine nötig.
+	 * Bewusst NICHT persistiert (Session-Neustart summiert bei Bedarf einmalig
+	 * neu) — hält die Persistenz-Struktur einfach.
+	 */
+	historySummary: string | null = null;
+	/** Wie viele der ältesten `messages` bereits in `historySummary` stecken. */
+	summarizedThroughIndex = 0;
 	/** Scroll-Container mit den Nachrichten-Bubbles dieses Tabs. */
 	containerEl: HTMLElement;
 
@@ -1135,8 +1155,14 @@ export class ChatView extends ItemView {
 	): Promise<void> {
 		// Läuft über alle Iterationen dieser einen Nutzer-Anfrage mit.
 		let cumulativeToolOutputChars = 0;
+		// Alles ab hier gehört zu DIESEM Aufruf (Verlauf/System davor bleibt bei
+		// der Kompression unangetastet, siehe compactWorkingIfNeeded).
+		const loopStartIdx = working.length;
 
 		for (let i = 0; i < MAX_AGENT_ITERATIONS; i++) {
+			if (i > 0) {
+				await this.compactWorkingIfNeeded(endpoint, working, loopStartIdx);
+			}
 			const turnStart = Date.now();
 			const result = await this.client.streamChat(
 				endpoint,
@@ -1500,6 +1526,16 @@ export class ChatView extends ItemView {
 			if (noteContext) systemParts.push(noteContext);
 		}
 
+		if (s.autoCompactHistory && tab.messages.length > s.maxContextMessages) {
+			await this.ensureHistorySummary(tab, s.maxContextMessages);
+		}
+		if (tab.historySummary) {
+			systemParts.push(
+				`<conversation_summary>\nZusammenfassung des bisherigen, nicht mehr im ` +
+					`Volltext enthaltenen Gesprächsverlaufs:\n${tab.historySummary}\n</conversation_summary>`
+			);
+		}
+
 		if (s.systemPrompt.trim()) systemParts.push(s.systemPrompt.trim());
 
 		// Agent-Mandat ans Ende. Vault-Agent und Websuche sind unabhängig schaltbar.
@@ -1526,6 +1562,135 @@ export class ChatView extends ItemView {
 			}
 		}
 		return result;
+	}
+
+	/** Nicht-streamender Hilfsaufruf für interne Zwecke (Zusammenfassungen). */
+	private async requestPlainCompletion(
+		endpoint: ResolvedEndpoint,
+		systemPrompt: string,
+		userPrompt: string
+	): Promise<string> {
+		let text = "";
+		await this.client.streamChat(
+			endpoint,
+			[
+				{ role: "system", content: systemPrompt },
+				{ role: "user", content: userPrompt },
+			],
+			false,
+			0.3,
+			{
+				onToken: (delta) => {
+					text += delta;
+				},
+			}
+		);
+		return text.trim();
+	}
+
+	/**
+	 * Fasst Nachrichten zusammen, die wegen `maxContextMessages` aus dem
+	 * gesendeten Verlauf fallen — analog zu Claude Codes Auto-Compact. Läuft
+	 * inkrementell: nur neu herausfallende Nachrichten werden zusätzlich zur
+	 * vorherigen Zusammenfassung verarbeitet, nicht der gesamte Verlauf erneut.
+	 */
+	private async ensureHistorySummary(tab: ChatTab, recentWindow: number): Promise<void> {
+		const cutoff = tab.messages.length - recentWindow;
+		if (cutoff <= tab.summarizedThroughIndex) return;
+
+		const newlyDropped = tab.messages.slice(tab.summarizedThroughIndex, cutoff);
+		const transcript = newlyDropped
+			.map((m) => `${m.role === "user" ? "Nutzer" : "Assistent"}: ${m.content}`)
+			.join("\n\n");
+		const priorSummary = tab.historySummary
+			? `Bisherige Zusammenfassung:\n${tab.historySummary}\n\n`
+			: "";
+
+		try {
+			const endpoint = resolveEndpoint(this.plugin.settings);
+			const summary = await this.requestPlainCompletion(
+				endpoint,
+				"Du fasst Chat-Verläufe präzise und kompakt zusammen. Erhalte wichtige " +
+					"Fakten, Entscheidungen, Zwischenergebnisse und offene Fragen. Nur " +
+					"Fließtext, keine Höflichkeitsfloskeln, max. ~250 Wörter.",
+				`${priorSummary}Neue Nachrichten seit der letzten Zusammenfassung:\n${transcript}\n\n` +
+					"Fasse den GESAMTEN bisherigen Verlauf (alte Zusammenfassung + neue " +
+					"Nachrichten) neu zusammen."
+			);
+			tab.historySummary = summary;
+			tab.summarizedThroughIndex = cutoff;
+		} catch {
+			// Zusammenfassung fehlgeschlagen (z. B. Server nicht erreichbar) — beim
+			// nächsten Request erneut versuchen, bis dahin bleibt die alte (ggf.
+			// unvollständige) Zusammenfassung bzw. gar keine.
+		}
+	}
+
+	private estimateApiMessagesChars(messages: ApiMessage[]): number {
+		return messages.reduce(
+			(sum, m) => sum + (typeof m.content === "string" ? m.content.length : 0),
+			0
+		);
+	}
+
+	/**
+	 * Komprimiert ältere Werkzeug-Runden EINER laufenden Anfrage, sobald sie zu
+	 * groß werden. `loopStartIdx` markiert den Anfang der in diesem Aufruf von
+	 * runAgentLoop hinzugefügten Nachrichten — alles davor (Verlauf/System)
+	 * bleibt unangetastet. Die jeweils letzte Runde bleibt immer vollständig
+	 * erhalten (aktuellster Kontext fürs Modell).
+	 */
+	private async compactWorkingIfNeeded(
+		endpoint: ResolvedEndpoint,
+		working: ApiMessage[],
+		loopStartIdx: number
+	): Promise<void> {
+		const loopSlice = working.slice(loopStartIdx);
+		if (this.estimateApiMessagesChars(loopSlice) < WORKING_COMPACT_THRESHOLD_CHARS) return;
+
+		const roundStarts: number[] = [];
+		for (let i = loopStartIdx; i < working.length; i++) {
+			if (working[i].role === "assistant") roundStarts.push(i);
+		}
+		if (roundStarts.length < 2) return; // Letzte Runde nie antasten.
+
+		const keepFromIdx = roundStarts[roundStarts.length - 1];
+		const toCompact = working.slice(loopStartIdx, keepFromIdx);
+		if (toCompact.length === 0) return;
+
+		const transcript = toCompact
+			.map((m) => {
+				if (m.role === "assistant" && m.tool_calls) {
+					return m.tool_calls
+						.map((c) => `→ Werkzeug ${c.function.name}(${c.function.arguments})`)
+						.join("\n");
+				}
+				if (m.role === "tool") {
+					const text = typeof m.content === "string" ? m.content : "";
+					return `Ergebnis: ${text.slice(0, 2000)}`;
+				}
+				return "";
+			})
+			.filter(Boolean)
+			.join("\n");
+
+		try {
+			const summary = await this.requestPlainCompletion(
+				endpoint,
+				"Du fasst die bisherigen Werkzeug-Aufrufe eines KI-Agenten kompakt " +
+					"zusammen: was wurde geprüft/gefunden, was ist das Zwischenergebnis. " +
+					"Nur Fließtext, keine Floskeln, max. ~200 Wörter.",
+				transcript.slice(0, 60_000)
+			);
+			working.splice(loopStartIdx, toCompact.length, {
+				role: "assistant",
+				content: `[Zusammenfassung bisheriger Werkzeug-Schritte in dieser Anfrage]\n${summary}`,
+			});
+		} catch {
+			// Kompression fehlgeschlagen — weiter mit vollem Verlauf, das
+			// Zeichen-Budget (MAX_TOOL_OUTPUT_CHARS_PER_TURN) greift notfalls
+			// als harte Grenze.
+		}
 	}
 
 	/** Lädt eine einzelne Instruktionsdatei aus dem Vault (Pfad relativ zum Root). */

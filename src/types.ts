@@ -175,6 +175,13 @@ export interface PluginSettings {
 	temperature: number;
 	/** Max. Nachrichten im Kontextfenster (Token-Management). */
 	maxContextMessages: number;
+	/**
+	 * Nachrichten, die wegen `maxContextMessages` aus dem Kontext fallen, per
+	 * LLM-Kurzfassung erhalten statt sie komplett zu verwerfen (Auto-Compact,
+	 * analog zu Claude Code). Kostet einen zusätzlichen Hintergrund-Request,
+	 * sobald die Grenze erstmals überschritten wird.
+	 */
+	autoCompactHistory: boolean;
 	/** Vault-Agent aktiv: Modell darf Notizen lesen/durchsuchen/schreiben. */
 	enableVaultAgent: boolean;
 	/** Vor Schreibaktionen (erstellen/anhängen/überschreiben) nachfragen. */
