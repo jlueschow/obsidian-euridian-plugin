@@ -250,6 +250,16 @@ ollama serve                             # if not, start it
 - Reload Obsidian (`Cmd/Ctrl+R`), check the console (`Cmd/Ctrl+Shift+I`).
 - Confirm the plugin is enabled under Community Plugins.
 
+**Request starts, then just stops (no error, no more text)**
+- Euridian aborts a hung stream after 90s of complete silence and shows a clear
+  error — if you're on an older version this instead waits forever with no
+  feedback. Update to the latest version.
+- If it happens repeatedly with a specific backend, that backend (or a proxy in
+  front of it) is likely dropping the connection without closing it cleanly —
+  common on custom/self-hosted servers behind a reverse proxy. Check the
+  server/proxy's own timeout settings, or try again — Euridian's stop button
+  and the new watchdog both recover cleanly instead of hanging indefinitely.
+
 ## 📄 License
 
 MIT — see [LICENSE](LICENSE).

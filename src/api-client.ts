@@ -40,6 +40,14 @@ interface StreamAccumulator {
 	toolCalls: Map<number, { id: string; name: string; args: string }>;
 }
 
+/**
+ * Kommt diese Dauer lang KEIN Byte an (weder Daten noch Fehler/Ende), gilt die
+ * Verbindung als hängend — z. B. ein Proxy/Server, der die TCP-Verbindung
+ * offen lässt, aber aufgehört hat zu antworten. Ohne diesen Watchdog würde
+ * Euridian sonst für immer auf eine Antwort warten, die nie kommt.
+ */
+const STREAM_IDLE_TIMEOUT_MS = 90_000;
+
 export class EuridianApiClient {
 	/**
 	 * Streamt eine Chat-Completion. Liefert Text-Deltas über `callbacks.onToken`
@@ -161,6 +169,27 @@ export class EuridianApiClient {
 
 			const acc = this.newAccumulator();
 
+			// Idle-Watchdog: bricht ab, wenn längere Zeit gar nichts mehr kommt
+			// (hängender Proxy/Server). Bei jedem empfangenen Byte neu gestartet.
+			let idleTimer: ReturnType<typeof setTimeout> | null = null;
+			let settled = false;
+			const resetIdleTimer = () => {
+				if (idleTimer !== null) clearTimeout(idleTimer);
+				if (settled) return;
+				idleTimer = setTimeout(() => {
+					const timeoutErr = new Error("idle-timeout") as Error & {
+						euridianIdleTimeout?: true;
+					};
+					timeoutErr.euridianIdleTimeout = true;
+					req.destroy(timeoutErr);
+				}, STREAM_IDLE_TIMEOUT_MS);
+			};
+			const clearIdleTimer = () => {
+				settled = true;
+				if (idleTimer !== null) clearTimeout(idleTimer);
+			};
+			resetIdleTimer();
+
 			const req = mod.request(
 				{
 					hostname: url.hostname,
@@ -180,16 +209,21 @@ export class EuridianApiClient {
 						// Fehler-Body sammeln, dann strukturierten Fehler werfen.
 						res.setEncoding("utf8");
 						let errText = "";
-						res.on("data", (c) => (errText += String(c)));
-						res.on("end", () =>
-							reject(this.mapHttpError(status, errText, endpoint))
-						);
+						res.on("data", (c) => {
+							resetIdleTimer();
+							errText += String(c);
+						});
+						res.on("end", () => {
+							clearIdleTimer();
+							reject(this.mapHttpError(status, errText, endpoint));
+						});
 						return;
 					}
 
 					res.setEncoding("utf8");
 					let buffer = "";
 					res.on("data", (chunk) => {
+						resetIdleTimer();
 						buffer = this.processSseBuffer(
 							buffer + String(chunk),
 							callbacks,
@@ -197,23 +231,35 @@ export class EuridianApiClient {
 						);
 					});
 					res.on("end", () => {
+						clearIdleTimer();
 						if (buffer.trim()) this.handleSseLine(buffer.trim(), callbacks, acc);
 						resolve(this.buildResult(acc));
 					});
-					res.on("error", (err) =>
+					res.on("error", (err) => {
+						clearIdleTimer();
 						reject(
 							new EuridianError(
 								"unknown",
 								`Stream-Fehler: ${(err as Error)?.message ?? "unbekannt"}`
 							)
-						)
-					);
+						);
+					});
 				}
 			);
 
-			req.on("error", (err: Error) => {
+			req.on("error", (err: Error & { euridianIdleTimeout?: true }) => {
+				clearIdleTimer();
 				if (callbacks.signal?.aborted) {
 					reject(new EuridianError("aborted", "Anfrage abgebrochen."));
+				} else if (err.euridianIdleTimeout) {
+					reject(
+						new EuridianError(
+							"offline",
+							`${endpoint.label}: Keine Antwort seit ${STREAM_IDLE_TIMEOUT_MS / 1000}s — ` +
+								"Verbindung hängt (Server/Proxy antwortet nicht mehr, ohne die " +
+								"Verbindung zu schließen). Prüfe Netzwerk/VPN oder versuch es erneut."
+						)
+					);
 				} else {
 					reject(
 						new EuridianError(
@@ -228,9 +274,14 @@ export class EuridianApiClient {
 
 			// Abbruch von außen.
 			if (callbacks.signal) {
-				callbacks.signal.addEventListener("abort", () => req.destroy(), {
-					once: true,
-				});
+				callbacks.signal.addEventListener(
+					"abort",
+					() => {
+						clearIdleTimer();
+						req.destroy();
+					},
+					{ once: true }
+				);
 			}
 
 			req.write(bodyStr);
@@ -533,5 +584,5 @@ interface NodeClientRequest {
 	on(event: "error", cb: (err: Error) => void): void;
 	write(chunk: string): void;
 	end(): void;
-	destroy(): void;
+	destroy(error?: Error): void;
 }
