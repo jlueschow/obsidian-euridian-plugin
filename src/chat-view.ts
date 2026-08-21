@@ -46,6 +46,9 @@ export const VIEW_TYPE_EURIDIAN = "euridian-chat-view";
 /** Max. Agent-Iterationen (Tool-Aufruf → Antwort) pro Nutzer-Nachricht. */
 const MAX_AGENT_ITERATIONS = 12;
 
+/** Ab dieser Wartezeit ohne jedes Token vermuten wir eine Server-Warteschlange (siehe Denkt-Indikator). */
+const QUEUE_HINT_THRESHOLD_S = 20;
+
 /**
  * Hartes Sicherheitsnetz gegen Kontext-Explosion: kumulative Zeichen aus ALLEN
  * Werkzeug-Ergebnissen innerhalb EINER Nutzer-Anfrage (über alle Iterationen).
@@ -1058,7 +1061,16 @@ export class ChatView extends ItemView {
 		const thinkingStart = Date.now();
 		const thinkingTick = window.setInterval(() => {
 			const secs = Math.floor((Date.now() - thinkingStart) / 1000);
-			thinkingTimerEl.setText(`denkt ${secs} s`);
+			// Nach einer Weile ohne jedes Token vermuten wir eine serverseitige
+			// Warteschlange (z. B. litellm/vLLM mit begrenzter Parallelität) und
+			// sagen das dazu, statt einfach nur weiterzuzählen — sonst wirkt eine
+			// lange, aber legitime Wartezeit wie ein Hänger (Nutzer-Feedback vom
+			// 21.08.2026: Anfrage schien tot, kam aber bei Rückfrage sofort zurück).
+			const text =
+				secs >= QUEUE_HINT_THRESHOLD_S
+					? `denkt ${secs} s (evtl. Warteschlange auf dem Server)`
+					: `denkt ${secs} s`;
+			thinkingTimerEl.setText(text);
 		}, 1000);
 
 		tab.abortController = new AbortController();

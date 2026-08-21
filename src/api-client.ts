@@ -41,12 +41,24 @@ interface StreamAccumulator {
 }
 
 /**
- * Kommt diese Dauer lang KEIN Byte an (weder Daten noch Fehler/Ende), gilt die
- * Verbindung als hängend — z. B. ein Proxy/Server, der die TCP-Verbindung
- * offen lässt, aber aufgehört hat zu antworten. Ohne diesen Watchdog würde
- * Euridian sonst für immer auf eine Antwort warten, die nie kommt.
+ * Kommt NACH dem ersten empfangenen Byte diese Dauer lang KEIN weiteres Byte
+ * an, gilt die Verbindung als hängend — z. B. ein Proxy/Server, der die
+ * TCP-Verbindung offen lässt, aber aufgehört hat zu antworten. Ohne diesen
+ * Watchdog würde Euridian sonst für immer auf eine Antwort warten, die nie
+ * kommt. Bewusst kurz: Mitten im Stream ist eine lange Pause verdächtig.
  */
 const STREAM_IDLE_TIMEOUT_MS = 90_000;
+
+/**
+ * Kommt VOR dem ersten Byte diese Dauer lang gar nichts an, gilt die
+ * Verbindung als hängend. Bewusst viel großzügiger als STREAM_IDLE_TIMEOUT_MS:
+ * Server mit begrenzter Parallelität (z. B. litellm/vLLM-Proxys mit
+ * Warteschlange) senden während der Wartezeit vor Generation-Start legitim
+ * minutenlang kein einziges Byte — das mit dem kurzen Mitten-im-Stream-Limit
+ * zu verwechseln killt echte, nur verzögerte Antworten (siehe Vorfall
+ * 20.08.2026: 90s-Timeout brach eine Anfrage ab, die serverseitig weiterlief).
+ */
+const STREAM_QUEUE_TIMEOUT_MS = 600_000;
 
 export class EuridianApiClient {
 	/**
@@ -171,18 +183,27 @@ export class EuridianApiClient {
 
 			// Idle-Watchdog: bricht ab, wenn längere Zeit gar nichts mehr kommt
 			// (hängender Proxy/Server). Bei jedem empfangenen Byte neu gestartet.
+			// Vor dem ersten Byte gilt ein deutlich großzügigeres Limit, da
+			// Server mit Warteschlange (begrenzte Parallelität) dort legitim
+			// lange nichts senden — siehe STREAM_QUEUE_TIMEOUT_MS.
 			let idleTimer: ReturnType<typeof setTimeout> | null = null;
 			let settled = false;
+			let receivedFirstByte = false;
 			const resetIdleTimer = () => {
 				if (idleTimer !== null) clearTimeout(idleTimer);
 				if (settled) return;
+				const timeoutMs = receivedFirstByte
+					? STREAM_IDLE_TIMEOUT_MS
+					: STREAM_QUEUE_TIMEOUT_MS;
 				idleTimer = setTimeout(() => {
 					const timeoutErr = new Error("idle-timeout") as Error & {
 						euridianIdleTimeout?: true;
+						euridianQueueTimeout?: boolean;
 					};
 					timeoutErr.euridianIdleTimeout = true;
+					timeoutErr.euridianQueueTimeout = !receivedFirstByte;
 					req.destroy(timeoutErr);
-				}, STREAM_IDLE_TIMEOUT_MS);
+				}, timeoutMs);
 			};
 			const clearIdleTimer = () => {
 				settled = true;
@@ -210,6 +231,7 @@ export class EuridianApiClient {
 						res.setEncoding("utf8");
 						let errText = "";
 						res.on("data", (c) => {
+							receivedFirstByte = true;
 							resetIdleTimer();
 							errText += String(c);
 						});
@@ -223,6 +245,7 @@ export class EuridianApiClient {
 					res.setEncoding("utf8");
 					let buffer = "";
 					res.on("data", (chunk) => {
+						receivedFirstByte = true;
 						resetIdleTimer();
 						buffer = this.processSseBuffer(
 							buffer + String(chunk),
@@ -247,17 +270,31 @@ export class EuridianApiClient {
 				}
 			);
 
-			req.on("error", (err: Error & { euridianIdleTimeout?: true }) => {
+			req.on(
+				"error",
+				(err: Error & { euridianIdleTimeout?: true; euridianQueueTimeout?: boolean }) => {
 				clearIdleTimer();
 				if (callbacks.signal?.aborted) {
 					reject(new EuridianError("aborted", "Anfrage abgebrochen."));
+				} else if (err.euridianQueueTimeout) {
+					reject(
+						new EuridianError(
+							"offline",
+							`${endpoint.label}: Keine Antwort seit ${STREAM_QUEUE_TIMEOUT_MS / 60_000} Minuten — ` +
+								"der Server hat noch nicht einmal mit der Antwort begonnen. " +
+								"Möglicherweise steckt die Anfrage in einer serverseitigen " +
+								"Warteschlange (begrenzte parallele Anfragen). Prüfe ggf. beim " +
+								"Server-Betreiber, oder versuch es erneut."
+						)
+					);
 				} else if (err.euridianIdleTimeout) {
 					reject(
 						new EuridianError(
 							"offline",
-							`${endpoint.label}: Keine Antwort seit ${STREAM_IDLE_TIMEOUT_MS / 1000}s — ` +
-								"Verbindung hängt (Server/Proxy antwortet nicht mehr, ohne die " +
-								"Verbindung zu schließen). Prüfe Netzwerk/VPN oder versuch es erneut."
+							`${endpoint.label}: Keine weiteren Daten seit ${STREAM_IDLE_TIMEOUT_MS / 1000}s — ` +
+								"Verbindung hängt mitten im Stream (Server/Proxy antwortet nicht " +
+								"mehr, ohne die Verbindung zu schließen). Prüfe Netzwerk/VPN " +
+								"oder versuch es erneut."
 						)
 					);
 				} else {
