@@ -874,22 +874,17 @@ export class ChatView extends ItemView {
 		let names: string[];
 
 		if (s.backend === "ollama") {
-			// Reihenfolge: frisch geladene Liste → gescannte Liste aus Settings → aktuelles.
-			names =
-				this.ollamaModels ??
-				(s.ollamaModels.length
-					? s.ollamaModels.slice()
-					: current
-						? [current]
-						: []);
+			// Reihenfolge: gescannte Liste aus Settings (kann auch vom Settings-Tab
+			// aktualisiert worden sein, während dieser Chat schon offen war) →
+			// eigener Lazy-Load-Cache → aktuelles. Settings zuerst, sonst bleibt
+			// das Dropdown nach einem Rescan im Settings-Tab dauerhaft veraltet.
+			names = s.ollamaModels.length
+				? s.ollamaModels.slice()
+				: (this.ollamaModels ?? (current ? [current] : []));
 		} else if (s.backend === "custom") {
-			names =
-				this.customModels ??
-				(s.customModels.length
-					? s.customModels.slice()
-					: current
-						? [current]
-						: []);
+			names = s.customModels.length
+				? s.customModels.slice()
+				: (this.customModels ?? (current ? [current] : []));
 		} else {
 			// Infomaniak: nur verfügbare ("ready") Modelle aus dem Katalog.
 			const ready = s.infomaniakCatalog
