@@ -188,15 +188,15 @@ export class EuridianSettingTab extends PluginSettingTab {
 					"Standard: Euria.md im Vault-Root. NICHT die vault-weite CLAUDE.md " +
 					"eintragen — große CLAUDE.md für andere Assistenten derailen den Agenten."
 			)
-			.addText((t) =>
-				t
-					.setPlaceholder("Euria.md")
+			.addText((t) => {
+				t.setPlaceholder("Euria.md")
 					.setValue(s.euridianInstructionsPath)
 					.onChange(async (v) => {
 						s.euridianInstructionsPath = v.trim();
 						await this.plugin.saveSettings();
-					})
-			);
+					});
+				t.inputEl.autocomplete = "off";
+			});
 
 		new Setting(containerEl)
 			.setName("System-Prompt")
@@ -432,15 +432,15 @@ export class EuridianSettingTab extends PluginSettingTab {
 		new Setting(containerEl)
 			.setName("Server-URL")
 			.setDesc("Standard: http://localhost:11434")
-			.addText((t) =>
-				t
-					.setPlaceholder("http://localhost:11434")
+			.addText((t) => {
+				t.setPlaceholder("http://localhost:11434")
 					.setValue(s.ollamaUrl)
 					.onChange(async (v) => {
 						s.ollamaUrl = v.trim();
 						await this.plugin.saveSettings();
-					})
-			);
+					});
+				t.inputEl.autocomplete = "off";
+			});
 
 		this.renderOllamaModelSelector();
 		this.renderOllamaScanButton();
@@ -457,15 +457,19 @@ export class EuridianSettingTab extends PluginSettingTab {
 			new Setting(containerEl)
 				.setName("Modell")
 				.setDesc("Noch nicht gescannt — unten „Modelle scannen“ klicken. Oder manuell:")
-				.addText((t) =>
-					t
-						.setPlaceholder("qwen3")
+				.addText((t) => {
+					t.setPlaceholder("qwen3")
 						.setValue(s.ollamaModel)
 						.onChange(async (v) => {
 							s.ollamaModel = v.trim();
 							await this.plugin.saveSettings();
-						})
-				);
+						});
+					// Freitext-Fallback vor dem ersten Scan — ohne autocomplete=off kann
+					// der Browser hier eine völlig unabhängige gespeicherte Autofill-
+					// Vorschlag (z. B. aus einem anderen Formular) einsetzen, die dann
+					// als "aktuelles Modell" persistiert wird (siehe "Fleet Operator"-Fall).
+					t.inputEl.autocomplete = "off";
+				});
 			return;
 		}
 
@@ -610,15 +614,15 @@ export class EuridianSettingTab extends PluginSettingTab {
 		new Setting(containerEl)
 			.setName("Server-URL")
 			.setDesc("Basis-URL ohne Pfad, z. B. https://llm.deine-hochschule.de")
-			.addText((t) =>
-				t
-					.setPlaceholder("https://llm.example.org")
+			.addText((t) => {
+				t.setPlaceholder("https://llm.example.org")
 					.setValue(s.customUrl)
 					.onChange(async (v) => {
 						s.customUrl = v.trim();
 						await this.plugin.saveSettings();
-					})
-			);
+					});
+				t.inputEl.autocomplete = "off";
+			});
 
 		new Setting(containerEl)
 			.setName("API-Key")
@@ -648,15 +652,16 @@ export class EuridianSettingTab extends PluginSettingTab {
 			new Setting(containerEl)
 				.setName("Modell")
 				.setDesc("Noch nicht gescannt — unten „Modelle scannen“ klicken. Oder manuell:")
-				.addText((t) =>
-					t
-						.setPlaceholder("Modellname")
+				.addText((t) => {
+					t.setPlaceholder("Modellname")
 						.setValue(s.customModel)
 						.onChange(async (v) => {
 							s.customModel = v.trim();
 							await this.plugin.saveSettings();
-						})
-				);
+						});
+					// Siehe Kommentar bei der Ollama-Variante oben — gleicher Grund.
+					t.inputEl.autocomplete = "off";
+				});
 			return;
 		}
 
@@ -753,15 +758,15 @@ export class EuridianSettingTab extends PluginSettingTab {
 		new Setting(containerEl)
 			.setName("Product-ID")
 			.setDesc("Numerische ID deines AI-Tools-Produkts (GET /1/ai).")
-			.addText((t) =>
-				t
-					.setPlaceholder("z. B. 12345")
+			.addText((t) => {
+				t.setPlaceholder("z. B. 12345")
 					.setValue(s.infomaniakProductId)
 					.onChange(async (v) => {
 						s.infomaniakProductId = v.trim();
 						await this.plugin.saveSettings();
-					})
-			);
+					});
+				t.inputEl.autocomplete = "off";
+			});
 
 		this.renderModelSelector();
 		this.renderConnectionTest();
@@ -789,15 +794,15 @@ export class EuridianSettingTab extends PluginSettingTab {
 				.setDesc(
 					"Noch keine Modell-Liste geladen. Unten „Modelle & Preise laden“ klicken."
 				)
-				.addText((t) =>
-					t
-						.setPlaceholder("mistralai/Mistral-Small-4-119B-2603")
+				.addText((t) => {
+					t.setPlaceholder("mistralai/Mistral-Small-4-119B-2603")
 						.setValue(s.infomaniakModel)
 						.onChange(async (v) => {
 							s.infomaniakModel = v.trim();
 							await this.plugin.saveSettings();
-						})
-				);
+						});
+					t.inputEl.autocomplete = "off";
+				});
 			this.renderRefreshButton();
 			return;
 		}
