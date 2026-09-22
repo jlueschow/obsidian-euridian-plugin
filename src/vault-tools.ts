@@ -11,6 +11,16 @@
 
 import { App, Notice, TFile, TFolder, normalizePath } from "obsidian";
 import { ToolCall, ToolDefinition } from "./types";
+// Direkt pdfjs-dist statt pdf-parse: pdf-parse v2 zieht @napi-rs/canvas (native
+// Node-Addon) hinein und referenziert beim reinen Modul-Import bereits
+// DOMMatrix/Canvas-Setup, was das Plugin in Obsidian mit "ReferenceError:
+// DOMMatrix is not defined" beim Laden abstürzen ließ. pdfjs-dist selbst
+// braucht Canvas nur für Rendering (_createCanvas, lazy) — reine Text-
+// Extraktion über getTextContent() kommt ganz ohne Canvas aus.
+import * as pdfjsLib from "pdfjs-dist/legacy/build/pdf.mjs";
+import { PDF_WORKER_SOURCE } from "./pdf-worker-source";
+import * as mammoth from "mammoth";
+import JSZip from "jszip";
 
 /** Max. Zeichen, die ein read_note an das Modell zurückgibt (Token-Schutz). */
 const MAX_READ_CHARS = 40_000;
@@ -18,6 +28,8 @@ const MAX_READ_CHARS = 40_000;
 const MAX_SEARCH_HITS = 25;
 /** Max. Pfade bei list_notes. */
 const MAX_LIST = 300;
+/** Unterstützte Nicht-Markdown-Dokumenttypen für read_document/list_documents. */
+const DOCUMENT_EXTENSIONS = ["pdf", "docx", "pptx"] as const;
 
 /** Stellt sicher, dass ein Notizpfad auf .md endet und normalisiert ist. */
 export function asNotePath(path: string): string {
@@ -75,6 +87,49 @@ export function getToolDefinitions(): ToolDefinition[] {
 						path: {
 							type: "string",
 							description: "Pfad zur Notiz relativ zum Vault-Root.",
+						},
+					},
+					required: ["path"],
+				},
+			},
+		},
+		{
+			type: "function",
+			function: {
+				name: "list_documents",
+				description:
+					"Listet Nicht-Markdown-Dokumente im Vault auf (PDF, DOCX, PPTX) mit Pfad und " +
+					"Dateigröße in Byte, optional gefiltert auf einen Ordner (Präfix). Diese Dateien " +
+					"tauchen NICHT bei list_notes auf. Nutze read_document, um den Textinhalt einer " +
+					"gefundenen Datei zu lesen.",
+				parameters: {
+					type: "object",
+					properties: {
+						folder: {
+							type: "string",
+							description:
+								"Optionaler Ordner-Präfix, z. B. '03 Projekte'. Leer = ganzer Vault.",
+						},
+					},
+				},
+			},
+		},
+		{
+			type: "function",
+			function: {
+				name: "read_document",
+				description:
+					"Extrahiert den Textinhalt eines PDF-, Word- (.docx) oder PowerPoint- (.pptx) " +
+					"Dokuments aus dem Vault. Nutze dies für Angebote, Rechnungen, QV-Protokolle, " +
+					"Publikationen oder andere Dateien, die nicht als Markdown-Notiz vorliegen. " +
+					"Bei PDFs mit reinen Bild-Scans (kein eingebetteter Text) kann das Ergebnis leer sein.",
+				parameters: {
+					type: "object",
+					properties: {
+						path: {
+							type: "string",
+							description:
+								"Pfad zum Dokument relativ zum Vault-Root, inkl. Dateiendung (.pdf/.docx/.pptx).",
 						},
 					},
 					required: ["path"],
@@ -206,6 +261,10 @@ export async function executeToolCall(
 				return listNotes(app, args.folder);
 			case "read_note":
 				return readNote(app, args.path);
+			case "list_documents":
+				return listDocuments(app, args.folder);
+			case "read_document":
+				return await readDocument(app, args.path);
 			case "search_vault":
 				return searchVault(app, args.query);
 			case "create_note":
@@ -273,6 +332,157 @@ async function readNote(app: App, path: string): Promise<string> {
 		);
 	}
 	return content || "(leere Notiz)";
+}
+
+/** Prüft, ob ein Pfad eine der unterstützten Dokument-Endungen hat. */
+function isDocumentFile(f: TFile): boolean {
+	return (DOCUMENT_EXTENSIONS as readonly string[]).includes(
+		f.extension.toLowerCase()
+	);
+}
+
+function listDocuments(app: App, folder?: string): string {
+	const prefix = folder ? normalizePath(folder) : "";
+	let files = app.vault.getFiles().filter(isDocumentFile);
+	if (prefix) {
+		files = files.filter((f) => f.path.startsWith(prefix));
+	}
+	if (files.length === 0) {
+		if (prefix && !(app.vault.getAbstractFileByPath(prefix) instanceof TFolder)) {
+			return `Ordner "${folder}" existiert nicht in diesem Vault.`;
+		}
+		return "Keine PDF-, DOCX- oder PPTX-Dateien gefunden.";
+	}
+	const lines = files
+		.slice(0, MAX_LIST)
+		.map((f) => `${f.path} (${f.stat.size} B)`);
+	const more =
+		files.length > MAX_LIST ? `\n… und ${files.length - MAX_LIST} weitere.` : "";
+	return `${files.length} Dokument(e):\n${lines.join("\n")}${more}`;
+}
+
+/** Kürzt extrahierten Dokumenttext auf das gleiche Budget wie read_note. */
+function truncateDocumentText(text: string): string {
+	const trimmed = text.trim();
+	if (!trimmed) return "(kein Text extrahiert — vermutlich reiner Bild-Scan ohne Text-Layer)";
+	if (trimmed.length > MAX_READ_CHARS) {
+		return (
+			trimmed.slice(0, MAX_READ_CHARS) +
+			`\n\n[… gekürzt, ${trimmed.length - MAX_READ_CHARS} Zeichen ausgelassen]`
+		);
+	}
+	return trimmed;
+}
+
+/** Blob-URL des eingebetteten pdf.js-Workers — einmalig erzeugt, dann wiederverwendet. */
+let pdfWorkerBlobUrl: string | null = null;
+
+/**
+ * pdf.js braucht `GlobalWorkerOptions.workerSrc`, sonst: "No
+ * GlobalWorkerOptions.workerSrc specified." Da das Plugin nur EINE main.js
+ * ausliefert (keine separate Datei/URL für den Worker), wird der Worker-
+ * Quellcode zur Build-Zeit eingebettet (siehe pdf-worker-source.ts) und hier
+ * als Blob-URL bereitgestellt — der Worker ist eine einzige, in sich
+ * geschlossene .mjs-Datei ohne externe Imports, daher unproblematisch als
+ * Blob zu laden.
+ */
+function ensurePdfWorker(): void {
+	if (pdfWorkerBlobUrl) return;
+	const blob = new Blob([PDF_WORKER_SOURCE], { type: "text/javascript" });
+	pdfWorkerBlobUrl = URL.createObjectURL(blob);
+	pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerBlobUrl;
+}
+
+async function extractPdfText(data: ArrayBuffer): Promise<string> {
+	ensurePdfWorker();
+	const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(data) });
+	const pdf = await loadingTask.promise;
+	try {
+		const pageTexts: string[] = [];
+		for (let i = 1; i <= pdf.numPages; i++) {
+			const page = await pdf.getPage(i);
+			const content = await page.getTextContent();
+			const text = content.items
+				.map((item) => ("str" in item ? item.str : ""))
+				.join(" ");
+			pageTexts.push(text);
+		}
+		// Seitenzahl explizit voranstellen — sonst muss das Modell sie aus dem
+		// Fließtext raten (z. B. übers Inhaltsverzeichnis), was leicht danebengeht.
+		return `[Dokument hat ${pdf.numPages} Seite(n)]\n\n${pageTexts.join("\n\n")}`;
+	} finally {
+		await pdf.destroy();
+	}
+}
+
+async function extractDocxText(data: ArrayBuffer): Promise<string> {
+	// mammoths Node-Build (lib/unzip.js) kennt nur {path|buffer|file}, nicht
+	// {arrayBuffer} (das ist ein reiner Browser-Pfad) — deshalb hier explizit
+	// in einen Node-Buffer wandeln statt das rohe ArrayBuffer durchzureichen.
+	const result = await mammoth.extractRawText({
+		buffer: Buffer.from(new Uint8Array(data)),
+	});
+	return result.value;
+}
+
+/** Extrahiert reinen Fließtext aus allen Folien einer .pptx (Zip aus Slide-XML). */
+async function extractPptxText(data: ArrayBuffer): Promise<string> {
+	const zip = await JSZip.loadAsync(data);
+	const slideFiles = Object.keys(zip.files)
+		.filter((p) => /^ppt\/slides\/slide\d+\.xml$/.test(p))
+		.sort((a, b) => {
+			const na = parseInt(a.match(/slide(\d+)\.xml/)?.[1] ?? "0", 10);
+			const nb = parseInt(b.match(/slide(\d+)\.xml/)?.[1] ?? "0", 10);
+			return na - nb;
+		});
+
+	const slideTexts: string[] = [];
+	for (const path of slideFiles) {
+		const xml = await zip.files[path].async("text");
+		// Text-Runs stehen in <a:t>…</a:t> — reicht für reinen Fließtext, ohne
+		// eine volle XML-Parser-Abhängigkeit einzuführen.
+		const matches = [...xml.matchAll(/<a:t>([^<]*)<\/a:t>/g)].map((m) => m[1]);
+		if (matches.length > 0) {
+			const slideNum = path.match(/slide(\d+)\.xml/)?.[1] ?? "?";
+			slideTexts.push(`--- Folie ${slideNum} ---\n${matches.join(" ")}`);
+		}
+	}
+	return slideTexts.join("\n\n");
+}
+
+async function readDocument(app: App, path: string): Promise<string> {
+	if (!path?.trim()) return "Fehler: kein Pfad angegeben.";
+	const file = app.vault.getAbstractFileByPath(normalizePath(path.trim()));
+	if (!(file instanceof TFile)) {
+		return `Fehler: Dokument "${path}" nicht gefunden.`;
+	}
+	const ext = file.extension.toLowerCase();
+	if (!(DOCUMENT_EXTENSIONS as readonly string[]).includes(ext)) {
+		return `Fehler: Dateityp ".${ext}" wird nicht unterstützt (nur ${DOCUMENT_EXTENSIONS.join(", ")}). Für Markdown-Notizen read_note nutzen.`;
+	}
+
+	const data = await app.vault.readBinary(file);
+	try {
+		let text: string;
+		switch (ext) {
+			case "pdf":
+				text = await extractPdfText(data);
+				break;
+			case "docx":
+				text = await extractDocxText(data);
+				break;
+			case "pptx":
+				text = await extractPptxText(data);
+				break;
+			default:
+				return `Fehler: Dateityp ".${ext}" wird nicht unterstützt.`;
+		}
+		return truncateDocumentText(text);
+	} catch (err) {
+		return `Fehler beim Lesen von "${path}": ${
+			err instanceof Error ? err.message : String(err)
+		}`;
+	}
 }
 
 /**

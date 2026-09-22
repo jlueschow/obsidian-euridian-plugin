@@ -4,10 +4,12 @@
   "description": "AI Chat in Obsidian — Ollama local or Infomaniak cloud",
   "main": "dist/main.js",
   "scripts": {
+    "predev": "node scripts/generate-pdf-worker.mjs",
     "dev": "node esbuild.config.mjs",
+    "prepackage": "node scripts/generate-pdf-worker.mjs",
     "package": "esbuild src/main.ts --bundle --format=cjs --platform=node --external:obsidian --external:@codemirror --minify --outfile=dist/main.js",
     "build": "npm run package && node scripts/deploy.mjs",
-    "build:debug": "esbuild src/main.ts --bundle --format=cjs --platform=node --external:obsidian --external:@codemirror --outfile=dist/main.js && node scripts/deploy.mjs",
+    "build:debug": "node scripts/generate-pdf-worker.mjs && esbuild src/main.ts --bundle --format=cjs --platform=node --external:obsidian --external:@codemirror --outfile=dist/main.js && node scripts/deploy.mjs",
     "deploy": "node scripts/deploy.mjs"
   },
   "keywords": [
@@ -25,10 +27,14 @@
     "@types/node": "^16.18.0",
     "@typescript-eslint/eslint-plugin": "^6.0.0",
     "@typescript-eslint/parser": "^6.0.0",
-    "esbuild": "0.13.12",
+    "esbuild": "^0.28.2",
     "obsidian": "latest",
     "tslib": "2.4.0",
     "typescript": "4.7.4"
   },
-  "dependencies": {}
+  "dependencies": {
+    "jszip": "^3.10.1",
+    "mammoth": "^1.12.2",
+    "pdfjs-dist": "^5.4.296"
+  }
 }

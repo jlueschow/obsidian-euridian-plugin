@@ -158,6 +158,9 @@ function buildAgentSystemPrompt(useVault: boolean, useWeb: boolean): string {
 		intro.push(
 			"Du hast über Werkzeuge echten Zugriff auf den Vault des Nutzers: Markdown-Notizen " +
 				"lesen, durchsuchen, auflisten, erstellen, ergänzen und ändern. " +
+				"Zusätzlich kannst du über list_documents und read_document den Textinhalt von " +
+				"PDF-, Word- (.docx) und PowerPoint- (.pptx) Dateien im Vault auslesen — diese " +
+				"tauchen nicht bei list_notes/search_vault auf, sondern nur bei list_documents. " +
 				"Nutze diese Werkzeuge proaktiv und selbstständig, statt zu behaupten, du hättest keinen Zugriff. " +
 				"Alle Pfade sind relativ zum Vault-Root. Wenn du einen Pfad nicht kennst, nutze search_vault oder list_notes."
 		);

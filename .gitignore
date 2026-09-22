@@ -6,6 +6,9 @@ yarn.lock
 dist/
 main.js
 
+# Generiert von scripts/generate-pdf-worker.mjs (läuft vor jedem Build)
+src/pdf-worker-source.ts
+
 # Development
 .DS_Store
 .vscode/

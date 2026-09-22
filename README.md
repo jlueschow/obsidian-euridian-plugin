@@ -95,6 +95,13 @@ ask naturally:
 > "Summarize the note 'Project X'"
 > "Search my vault for notes about Dante routing"
 > "Append today's meeting notes to my daily note"
+> "What does the PDF in 08 Anhänge say about warranty terms?"
+
+Besides Markdown notes, the agent can also read **PDF, DOCX, and PPTX** files
+in your vault (`list_documents` / `read_document`) — useful for invoices,
+reports, or slide decks that aren't notes. Extracted text is capped at the
+same 40k-character budget as `read_note`; scanned PDFs without a text layer
+return no text.
 
 Each tool call shows as a chip in the chat. Write actions (create/append/edit)
 pause for your confirmation with a preview — nothing is written until you approve.
