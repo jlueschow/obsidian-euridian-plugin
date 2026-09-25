@@ -21,6 +21,8 @@ import { EuridianApiClient } from "./api-client";
 import {
 	currentModelRef,
 	effectiveThinking,
+	isKnownBackend,
+	providerFor,
 	resolveEndpoint,
 	settingsForRef,
 } from "./backend";
@@ -317,9 +319,8 @@ export class ChatView extends ItemView {
 	/** Anhänge für die nächste Nachricht (wird nach dem Senden geleert). */
 	private pendingAttachments: PendingAttachment[] = [];
 
-	/** Gecachte Ollama-Modellliste (lazy geladen). */
-	private ollamaModels: string[] | null = null;
-	private customModels: string[] | null = null;
+	/** Lazy per `/v1/models` geladene Modelllisten je Backend. */
+	private scannedModels = new Map<Backend, string[]>();
 
 	constructor(leaf: WorkspaceLeaf, plugin: EuridianPlugin) {
 		super(leaf);
@@ -445,10 +446,8 @@ export class ChatView extends ItemView {
 		// Beim Öffnen des Dropdowns ggf. Modelle nachladen (Ollama/eigener Server).
 		this.modelSelectEl.addEventListener("focus", () => {
 			const backend = this.activeTab.modelRef.backend;
-			if (backend === "ollama" && !this.ollamaModels) {
-				void this.loadOllamaModels();
-			} else if (backend === "custom" && !this.customModels) {
-				void this.loadCustomModels();
+			if (providerFor(backend).lazyScan && !this.scannedModels.has(backend)) {
+				void this.loadModels(backend);
 			}
 		});
 	}
@@ -836,10 +835,7 @@ export class ChatView extends ItemView {
 		for (const session of saved.tabs) {
 			const container = this.bodyEl.createDiv({ cls: "euridian-messages" });
 			const savedRef = session.modelRef;
-			const validBackend =
-				savedRef?.backend === "ollama" ||
-				savedRef?.backend === "infomaniak" ||
-				savedRef?.backend === "custom";
+			const validBackend = isKnownBackend(savedRef?.backend);
 			const tab = new ChatTab(
 				session.id,
 				session.title,
@@ -927,27 +923,14 @@ export class ChatView extends ItemView {
 		select.title = `Backend dieses Chats: ${this.backendLabel(backend)}`;
 
 		const current = this.currentModel();
-		let names: string[];
-
-		if (backend === "ollama") {
-			// Reihenfolge: gescannte Liste aus Settings (kann auch vom Settings-Tab
-			// aktualisiert worden sein, während dieser Chat schon offen war) →
-			// eigener Lazy-Load-Cache → aktuelles. Settings zuerst, sonst bleibt
-			// das Dropdown nach einem Rescan im Settings-Tab dauerhaft veraltet.
-			names = s.ollamaModels.length
-				? s.ollamaModels.slice()
-				: (this.ollamaModels ?? (current ? [current] : []));
-		} else if (backend === "custom") {
-			names = s.customModels.length
-				? s.customModels.slice()
-				: (this.customModels ?? (current ? [current] : []));
-		} else {
-			// Infomaniak: nur verfügbare ("ready") Modelle aus dem Katalog.
-			const ready = s.infomaniakCatalog
-				.filter((e) => e.status === "ready")
-				.map((e) => e.name);
-			names = ready.length ? ready : current ? [current] : [];
-		}
+		// Reihenfolge: gecachte Liste aus den Settings (kann vom Settings-Tab
+		// aktualisiert worden sein, während dieser Chat schon offen war) → eigener
+		// Lazy-Load-Cache → aktuelles. Settings zuerst, sonst bleibt das Dropdown
+		// nach einem Rescan im Settings-Tab dauerhaft veraltet.
+		const cached = providerFor(backend).cachedModels(s);
+		const names: string[] = cached.length
+			? cached.slice()
+			: (this.scannedModels.get(backend) ?? (current ? [current] : []));
 
 		// Aktuelles Modell sicher als Option vorhanden.
 		if (current && !names.includes(current)) names.unshift(current);
@@ -1045,9 +1028,7 @@ export class ChatView extends ItemView {
 	}
 
 	private backendLabel(backend: Backend): string {
-		if (backend === "ollama") return "Ollama";
-		if (backend === "custom") return "Eigener Server";
-		return "Infomaniak Euria";
+		return providerFor(backend).label;
 	}
 
 	/**
@@ -1076,31 +1057,19 @@ export class ChatView extends ItemView {
 		return resolveEndpoint(settingsForRef(this.plugin.settings, tab.modelRef));
 	}
 
-	/** Lädt die Ollama-Modellliste lazy und aktualisiert das Dropdown. */
-	private async loadOllamaModels(): Promise<void> {
+	/** Lädt die Modellliste eines Backends lazy und aktualisiert das Dropdown. */
+	private async loadModels(backend: Backend): Promise<void> {
 		try {
-			const endpoint = this.listEndpoint("ollama");
-			this.ollamaModels = await this.client.listModels(endpoint);
+			const endpoint = this.listEndpoint(backend);
+			const names = await this.client.listModels(endpoint);
+			this.scannedModels.set(backend, names);
 			// In die Settings spiegeln, damit der Settings-Tab dieselbe Liste zeigt.
-			this.plugin.settings.ollamaModels = this.ollamaModels.slice();
+			providerFor(backend).storeModels(this.plugin.settings, names.slice());
 			await this.plugin.saveSettings();
 			this.populateModelSelect();
 		} catch {
 			// Das Freitext-Modell bleibt nutzbar; kein harter Fehler nötig.
-			this.ollamaModels = [];
-		}
-	}
-
-	/** Lädt die Modellliste des eigenen Servers lazy und aktualisiert das Dropdown. */
-	private async loadCustomModels(): Promise<void> {
-		try {
-			const endpoint = this.listEndpoint("custom");
-			this.customModels = await this.client.listModels(endpoint);
-			this.plugin.settings.customModels = this.customModels.slice();
-			await this.plugin.saveSettings();
-			this.populateModelSelect();
-		} catch {
-			this.customModels = [];
+			this.scannedModels.set(backend, []);
 		}
 	}
 
