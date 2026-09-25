@@ -129,6 +129,17 @@ export default class EuridianPlugin extends Plugin {
 	}
 
 	/**
+	 * Frischt alle offenen Chat-Ansichten auf, z. B. nach Änderungen im Settings-
+	 * Tab (Modelllisten neu gescannt, Server/Key geändert). Die einzelnen Chats
+	 * behalten dabei ihr Backend + Modell.
+	 */
+	refreshChatViews(): void {
+		for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_EURIDIAN)) {
+			if (leaf.view instanceof ChatView) leaf.view.refreshFromSettings();
+		}
+	}
+
+	/**
 	 * Öffnet (falls nötig) die Chat-View und hängt die markierte Auswahl als
 	 * Kontext an. Genutzt von Command und Editor-Kontextmenü.
 	 */

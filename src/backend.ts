@@ -7,7 +7,7 @@
  * (und nur hier) ergänzt.
  */
 
-import { EuridianError, PluginSettings, ResolvedEndpoint } from "./types";
+import { Backend, EuridianError, ModelRef, PluginSettings, ResolvedEndpoint } from "./types";
 
 /** Entfernt einen abschließenden Slash, damit Pfad-Joins sauber bleiben. */
 function trimTrailingSlash(url: string): string {
@@ -104,5 +104,39 @@ export function resolveEndpoint(settings: PluginSettings): ResolvedEndpoint {
 		headers: { Authorization: `Bearer ${key}` },
 		model: settings.infomaniakModel,
 		label: "Infomaniak Euria",
+	};
+}
+
+/** Name des Settings-Felds, das das gewählte Modell des Backends enthält. */
+function modelFieldFor(
+	backend: Backend
+): "ollamaModel" | "customModel" | "infomaniakModel" {
+	if (backend === "ollama") return "ollamaModel";
+	if (backend === "custom") return "customModel";
+	return "infomaniakModel";
+}
+
+/** Backend + Modell, wie sie in den Settings gerade als Standard gewählt sind. */
+export function currentModelRef(settings: PluginSettings): ModelRef {
+	return {
+		backend: settings.backend,
+		model: settings[modelFieldFor(settings.backend)],
+	};
+}
+
+/**
+ * Settings-Kopie, in der Backend + Modell durch die eines bestimmten Chats
+ * ersetzt sind. So arbeiten `resolveEndpoint`/`effectiveThinking` unverändert,
+ * lesen aber nicht mehr den globalen Zustand, sondern den des Chats. URLs und
+ * API-Keys bleiben global (die gehören zum Server, nicht zum Chat).
+ */
+export function settingsForRef(
+	settings: PluginSettings,
+	ref: ModelRef
+): PluginSettings {
+	return {
+		...settings,
+		backend: ref.backend,
+		[modelFieldFor(ref.backend)]: ref.model,
 	};
 }

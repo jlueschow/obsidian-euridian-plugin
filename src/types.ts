@@ -281,10 +281,21 @@ export interface StreamChunk {
 }
 
 /** Eine persistierte Chat-Konversation (entspricht einem Tab). */
+/** Welches Backend + Modell ein Chat verwendet — pro Chat fest, nicht global. */
+export interface ModelRef {
+	backend: Backend;
+	model: string;
+}
+
 export interface ChatSession {
 	id: string;
 	title: string;
 	messages: ChatMessage[];
+	/**
+	 * Backend + Modell dieses Chats. Fehlt bei Chats aus älteren Versionen; dann
+	 * wird beim Laden der aktuelle Settings-Stand übernommen.
+	 */
+	modelRef?: ModelRef;
 }
 
 /** Gesamter persistenter Zustand der Chat-View (alle Tabs). */

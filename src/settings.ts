@@ -103,6 +103,11 @@ export class EuridianSettingTab extends PluginSettingTab {
 		this.plugin = plugin;
 	}
 
+	/** Beim Schließen des Settings-Tabs offene Chats auffrischen (Modelllisten etc.). */
+	hide(): void {
+		this.plugin.refreshChatViews();
+	}
+
 	display(): void {
 		const { containerEl } = this;
 		containerEl.empty();

@@ -18,7 +18,12 @@ import {
 	setIcon,
 } from "obsidian";
 import { EuridianApiClient } from "./api-client";
-import { effectiveThinking, resolveEndpoint } from "./backend";
+import {
+	currentModelRef,
+	effectiveThinking,
+	resolveEndpoint,
+	settingsForRef,
+} from "./backend";
 import {
 	describeToolCall,
 	executeToolCall,
@@ -36,6 +41,8 @@ import {
 	PromptTemplate,
 	ResolvedEndpoint,
 	SessionsState,
+	Backend,
+	ModelRef,
 	ToolDefinition,
 	TokenUsage,
 } from "./types";
@@ -234,13 +241,35 @@ class ChatTab {
 	historySummary: string | null = null;
 	/** Wie viele der ältesten `messages` bereits in `historySummary` stecken. */
 	summarizedThroughIndex = 0;
+	/**
+	 * Backend + Modell DIESES Chats. Fest je Tab, unabhängig von den globalen
+	 * Settings und von anderen Tabs/Fenstern — sonst wirkt ein Modellwechsel in
+	 * einem Chat lautlos auf alle anderen (und ein Backend-Wechsel in den Settings
+	 * ließ Dropdown und tatsächliche Anfrage auseinanderlaufen).
+	 */
+	modelRef: ModelRef;
+	/**
+	 * Modelle (Schlüssel `backend|modell`), die Bilder komplett abgelehnt haben.
+	 * Für sie werden Bilder aus dem Verlauf nicht mehr mitgeschickt. Bewusst nicht
+	 * persistiert (wie historySummary): nach einem Neustart genügt ein einmaliger
+	 * automatischer Wiederholungsversuch.
+	 */
+	imagesRejectedFor = new Set<string>();
+	/** Modelle mit Bild-Obergrenze pro Anfrage (Schlüssel `backend|modell` → N). */
+	imageLimitFor = new Map<string, number>();
 	/** Scroll-Container mit den Nachrichten-Bubbles dieses Tabs. */
 	containerEl: HTMLElement;
 
-	constructor(id: string, title: string, containerEl: HTMLElement) {
+	constructor(
+		id: string,
+		title: string,
+		containerEl: HTMLElement,
+		modelRef: ModelRef
+	) {
 		this.id = id;
 		this.title = title;
 		this.containerEl = containerEl;
+		this.modelRef = modelRef;
 	}
 
 	get isStreaming(): boolean {
@@ -415,7 +444,7 @@ export class ChatView extends ItemView {
 		});
 		// Beim Öffnen des Dropdowns ggf. Modelle nachladen (Ollama/eigener Server).
 		this.modelSelectEl.addEventListener("focus", () => {
-			const backend = this.plugin.settings.backend;
+			const backend = this.activeTab.modelRef.backend;
 			if (backend === "ollama" && !this.ollamaModels) {
 				void this.loadOllamaModels();
 			} else if (backend === "custom" && !this.customModels) {
@@ -698,12 +727,18 @@ export class ChatView extends ItemView {
 	private addTab(): void {
 		const id = `tab-${++this.tabCounter}`;
 		const container = this.bodyEl.createDiv({ cls: "euridian-messages" });
-		const tab = new ChatTab(id, `Chat ${this.tabCounter}`, container);
+		const tab = new ChatTab(
+			id,
+			`Chat ${this.tabCounter}`,
+			container,
+			currentModelRef(this.plugin.settings)
+		);
 		this.tabs.push(tab);
 		this.activeTabId = id;
 		this.renderEmptyState(tab);
 		this.renderTabBar();
 		this.showActiveTab();
+		this.populateModelSelect();
 		this.syncInputState();
 		this.updateStatus();
 		this.persist();
@@ -731,6 +766,7 @@ export class ChatView extends ItemView {
 		}
 		this.renderTabBar();
 		this.showActiveTab();
+		this.populateModelSelect();
 		this.syncInputState();
 		this.updateStatus();
 		this.persist();
@@ -741,6 +777,7 @@ export class ChatView extends ItemView {
 		this.activeTabId = id;
 		this.renderTabBar();
 		this.showActiveTab();
+		this.populateModelSelect();
 		this.syncInputState();
 		this.updateStatus();
 		this.persist();
@@ -798,7 +835,19 @@ export class ChatView extends ItemView {
 
 		for (const session of saved.tabs) {
 			const container = this.bodyEl.createDiv({ cls: "euridian-messages" });
-			const tab = new ChatTab(session.id, session.title, container);
+			const savedRef = session.modelRef;
+			const validBackend =
+				savedRef?.backend === "ollama" ||
+				savedRef?.backend === "infomaniak" ||
+				savedRef?.backend === "custom";
+			const tab = new ChatTab(
+				session.id,
+				session.title,
+				container,
+				savedRef && validBackend && typeof savedRef.model === "string"
+					? { backend: savedRef.backend, model: savedRef.model }
+					: currentModelRef(this.plugin.settings)
+			);
 			tab.messages = session.messages.slice();
 			this.tabs.push(tab);
 			await this.renderTabMessages(tab);
@@ -850,6 +899,7 @@ export class ChatView extends ItemView {
 				id: t.id,
 				title: t.title,
 				messages: t.messages,
+				modelRef: t.modelRef,
 			})),
 			activeTabId: this.activeTabId,
 			tabCounter: this.tabCounter,
@@ -859,24 +909,27 @@ export class ChatView extends ItemView {
 
 	// --------------------------------------------------------------- Modelle
 
-	/** Trägt den aktuell aktiven Modellnamen je Backend ein. */
+	/** Modell des AKTIVEN Tabs (nicht der globalen Settings). */
 	private currentModel(): string {
-		const s = this.plugin.settings;
-		if (s.backend === "ollama") return s.ollamaModel;
-		if (s.backend === "custom") return s.customModel;
-		return s.infomaniakModel;
+		return this.activeTab.modelRef.model;
 	}
 
-	/** Befüllt das Modell-Dropdown abhängig vom Backend. */
+	/**
+	 * Befüllt das Modell-Dropdown für Backend + Modell des aktiven Tabs. Muss bei
+	 * jedem Tab-Wechsel und nach Änderungen in den Settings neu laufen (siehe
+	 * refreshFromSettings), damit die Anzeige nie vom tatsächlichen Chat abweicht.
+	 */
 	private populateModelSelect(): void {
 		const s = this.plugin.settings;
+		const backend = this.activeTab.modelRef.backend;
 		const select = this.modelSelectEl;
 		select.empty();
+		select.title = `Backend dieses Chats: ${this.backendLabel(backend)}`;
 
 		const current = this.currentModel();
 		let names: string[];
 
-		if (s.backend === "ollama") {
+		if (backend === "ollama") {
 			// Reihenfolge: gescannte Liste aus Settings (kann auch vom Settings-Tab
 			// aktualisiert worden sein, während dieser Chat schon offen war) →
 			// eigener Lazy-Load-Cache → aktuelles. Settings zuerst, sonst bleibt
@@ -884,7 +937,7 @@ export class ChatView extends ItemView {
 			names = s.ollamaModels.length
 				? s.ollamaModels.slice()
 				: (this.ollamaModels ?? (current ? [current] : []));
-		} else if (s.backend === "custom") {
+		} else if (backend === "custom") {
 			names = s.customModels.length
 				? s.customModels.slice()
 				: (this.customModels ?? (current ? [current] : []));
@@ -922,18 +975,111 @@ export class ChatView extends ItemView {
 
 	private async onModelChanged(value: string): Promise<void> {
 		if (!value) return;
-		const s = this.plugin.settings;
-		if (s.backend === "ollama") s.ollamaModel = value;
-		else if (s.backend === "custom") s.customModel = value;
-		else s.infomaniakModel = value;
-		await this.plugin.saveSettings();
-		new Notice(`Modell: ${this.shortModel(value)}`);
+		// Nur der aktive Chat wechselt sein Modell. Die globalen Settings bleiben
+		// unberührt — sie sind der Standard für NEUE Chats.
+		this.activeTab.modelRef = { ...this.activeTab.modelRef, model: value };
+		this.persist();
+		new Notice(`Modell dieses Chats: ${this.shortModel(value)}`);
+	}
+
+	private refKey(ref: ModelRef): string {
+		return `${ref.backend}|${ref.model}`;
+	}
+
+	/**
+	 * Erkennt Serverfehler, die von Bildern kommen: "unsupported" (Modell nimmt
+	 * keine Bilder, z. B. "At most 0 image(s)") oder "limit" (Obergrenze pro
+	 * Anfrage, z. B. "At most 3 image(s)").
+	 */
+	private classifyImageRejection(
+		err: unknown
+	): { kind: "unsupported" } | { kind: "limit"; max: number } | null {
+		if (!(err instanceof EuridianError) || err.kind !== "bad_request") return null;
+		const msg = err.message;
+		const atMost = /at most (\d+) image/i.exec(msg);
+		if (atMost) {
+			const max = parseInt(atMost[1], 10);
+			return max > 0 ? { kind: "limit", max } : { kind: "unsupported" };
+		}
+		if (
+			/(not support|unsupported|does not accept)[^.]{0,60}(image|vision|multimodal)/i.test(msg) ||
+			/(image|vision|multimodal)[^.]{0,60}(not support|unsupported|not accepted)/i.test(msg)
+		) {
+			return { kind: "unsupported" };
+		}
+		return null;
+	}
+
+	/**
+	 * Passt den Chat an, wenn der Server Bilder abgelehnt hat. Liefert true, wenn
+	 * ein Wiederholungsversuch mit weniger/ohne Bilder sinnvoll ist. Greift nur,
+	 * wenn wirklich Bilder im mitgeschickten Verlauf stecken und die Anpassung
+	 * neu ist — sonst würde derselbe Fehler endlos wiederholt.
+	 */
+	private adaptToImageRejection(tab: ChatTab, err: unknown): boolean {
+		const rejection = this.classifyImageRejection(err);
+		if (!rejection) return false;
+		const recent = tab.messages.slice(-this.plugin.settings.maxContextMessages);
+		if (!recent.some((m) => m.role === "user" && m.images && m.images.length > 0)) {
+			return false;
+		}
+		const key = this.refKey(tab.modelRef);
+		const name = this.shortModel(tab.modelRef.model);
+		if (rejection.kind === "unsupported") {
+			if (tab.imagesRejectedFor.has(key)) return false;
+			tab.imagesRejectedFor.add(key);
+			new Notice(
+				`„${name}“ nimmt keine Bilder an — sende ohne Bilder erneut. Für Bilder ein Modell mit Bildunterstützung wählen.`,
+				8000
+			);
+			return true;
+		}
+		const known = tab.imageLimitFor.get(key);
+		if (known !== undefined && known <= rejection.max) return false;
+		tab.imageLimitFor.set(key, rejection.max);
+		new Notice(
+			`„${name}“ erlaubt max. ${rejection.max} Bilder pro Anfrage — sende mit den neuesten ${rejection.max} erneut.`,
+			8000
+		);
+		return true;
+	}
+
+	private backendLabel(backend: Backend): string {
+		if (backend === "ollama") return "Ollama";
+		if (backend === "custom") return "Eigener Server";
+		return "Infomaniak Euria";
+	}
+
+	/**
+	 * Wird aufgerufen, wenn der Settings-Tab geschlossen wird (Modelllisten neu
+	 * gescannt, Server/Key geändert, …). Die Chats behalten ihr Backend + Modell,
+	 * aber Dropdown-Liste und Statuszeile werden aufgefrischt.
+	 */
+	refreshFromSettings(): void {
+		if (this.tabs.length === 0) return;
+		this.populateModelSelect();
+		this.updateStatus();
+	}
+
+	/**
+	 * Endpunkt nur zum Auflisten der Modelle (URL + Auth des Backends). Braucht
+	 * kein gewähltes Modell — der Platzhalter wird von /models ignoriert.
+	 */
+	private listEndpoint(backend: Backend): ReturnType<typeof resolveEndpoint> {
+		return resolveEndpoint(
+			settingsForRef(this.plugin.settings, { backend, model: "?" })
+		);
+	}
+
+	/** Endpunkt dieses Chats: Backend + Modell aus dem Tab, URL/Key aus den Settings. */
+	private endpointFor(tab: ChatTab): ReturnType<typeof resolveEndpoint> {
+		return resolveEndpoint(settingsForRef(this.plugin.settings, tab.modelRef));
 	}
 
 	/** Lädt die Ollama-Modellliste lazy und aktualisiert das Dropdown. */
 	private async loadOllamaModels(): Promise<void> {
 		try {
-			const endpoint = resolveEndpoint(this.plugin.settings);
+			const endpoint = this.listEndpoint("ollama");
 			this.ollamaModels = await this.client.listModels(endpoint);
 			// In die Settings spiegeln, damit der Settings-Tab dieselbe Liste zeigt.
 			this.plugin.settings.ollamaModels = this.ollamaModels.slice();
@@ -948,7 +1094,7 @@ export class ChatView extends ItemView {
 	/** Lädt die Modellliste des eigenen Servers lazy und aktualisiert das Dropdown. */
 	private async loadCustomModels(): Promise<void> {
 		try {
-			const endpoint = resolveEndpoint(this.plugin.settings);
+			const endpoint = this.listEndpoint("custom");
 			this.customModels = await this.client.listModels(endpoint);
 			this.plugin.settings.customModels = this.customModels.slice();
 			await this.plugin.saveSettings();
@@ -1015,6 +1161,16 @@ export class ChatView extends ItemView {
 		attachedFiles: string[] = [],
 		images: AttachedImage[] = []
 	): Promise<void> {
+		if (
+			images.length > 0 &&
+			tab.imagesRejectedFor.has(this.refKey(tab.modelRef))
+		) {
+			new Notice(
+				`„${this.shortModel(tab.modelRef.model)}“ hat Bilder zuvor abgelehnt — das Bild wird nicht mitgeschickt. Modell wechseln oder neuen Chat starten.`,
+				8000
+			);
+		}
+
 		if (tab.messages.length === 0) {
 			tab.containerEl.empty();
 			const titleSrc = displayText || attachedFiles[0] || "Chat";
@@ -1128,7 +1284,7 @@ export class ChatView extends ItemView {
 		};
 
 		try {
-			const endpoint = resolveEndpoint(this.plugin.settings);
+			const endpoint = this.endpointFor(tab);
 			const useAgent = this.plugin.settings.enableVaultAgent;
 			const useWeb =
 				this.plugin.settings.enableWebSearch &&
@@ -1143,18 +1299,34 @@ export class ChatView extends ItemView {
 						]
 					: undefined;
 
-			// Arbeits-Nachrichten für diese Nutzer-Runde (inkl. Tool-Zwischenschritte).
-			const working: ApiMessage[] = await this.buildRequestMessages(tab);
-
-			await this.runAgentLoop(
-				tab,
-				endpoint,
-				working,
-				tools,
-				callbacks,
-				toolsEl,
-				thinkingEl
-			);
+			// Lehnt der Server die Bilder im Verlauf ab (Modellwechsel!), passen wir
+			// die Bildmenge an und versuchen es EINMAL neu. Nur, solange noch kein
+			// Werkzeug lief — sonst könnten Schreibaktionen doppelt passieren.
+			let attempt = 0;
+			for (;;) {
+				// Arbeits-Nachrichten für diese Nutzer-Runde (inkl. Tool-Zwischenschritte).
+				const working: ApiMessage[] = await this.buildRequestMessages(tab);
+				try {
+					await this.runAgentLoop(
+						tab,
+						endpoint,
+						working,
+						tools,
+						callbacks,
+						toolsEl,
+						thinkingEl
+					);
+					break;
+				} catch (loopErr) {
+					if (
+						attempt++ > 0 ||
+						toolsEl.childElementCount > 0 ||
+						!this.adaptToImageRejection(tab, loopErr)
+					) {
+						throw loopErr;
+					}
+				}
+			}
 
 			// t/s aus completionTokens des finalen Turns ÷ dessen Dauer.
 			// Cast nötig: TS narrowt tab.lastUsage fälschlich auf den Stand VOR
@@ -1221,7 +1393,7 @@ export class ChatView extends ItemView {
 			const result = await this.client.streamChat(
 				endpoint,
 				working,
-				effectiveThinking(this.plugin.settings),
+				effectiveThinking(settingsForRef(this.plugin.settings, tab.modelRef)),
 				this.plugin.settings.temperature,
 				callbacks,
 				tools
@@ -1602,19 +1774,52 @@ export class ChatView extends ItemView {
 			result.push({ role: "system", content: systemParts.join("\n\n") });
 		}
 
-		for (const m of tab.messages.slice(-s.maxContextMessages)) {
+		// Bilder im Verlauf hängen am Modell: ein Wechsel auf ein Modell ohne
+		// Bildunterstützung (oder mit Bild-Obergrenze) ließ sonst JEDE weitere
+		// Nachricht mit HTTP 400 scheitern, solange ein Bild in den letzten
+		// Nachrichten steckt. Hat der Server Bilder abgelehnt (imagesRejectedFor /
+		// imageLimitFor, siehe adaptToImageRejection), schicken wir nur noch so
+		// viele Bilder mit, wie das Modell nimmt — die neuesten zuerst.
+		const recent = tab.messages.slice(-s.maxContextMessages);
+		const key = this.refKey(tab.modelRef);
+		let allowance = tab.imagesRejectedFor.has(key)
+			? 0
+			: (tab.imageLimitFor.get(key) ?? Infinity);
+		const keepCount = new Map<number, number>();
+		for (let i = recent.length - 1; i >= 0 && allowance > 0; i--) {
+			const imgs = recent[i].role === "user" ? recent[i].images : undefined;
+			if (imgs && imgs.length > 0) {
+				const keep = Math.min(imgs.length, allowance);
+				keepCount.set(i, keep);
+				allowance -= keep;
+			}
+		}
+
+		recent.forEach((m, i) => {
 			if (m.role === "user" && m.images && m.images.length > 0) {
-				// Multimodal: Text + ein image_url-Teil pro Bild.
+				const keep = keepCount.get(i) ?? 0;
+				const dropped = m.images.length - keep;
+				const note =
+					dropped > 0
+						? `\n[${dropped} Bild${dropped > 1 ? "er" : ""} für dieses Modell nicht mitgeschickt.]`
+						: "";
+				if (keep === 0) {
+					result.push({ role: m.role, content: (m.content || "") + note });
+					return;
+				}
+				// Multimodal: Text + ein image_url-Teil pro (behaltenem) Bild.
 				const parts: ContentPart[] = [];
-				if (m.content) parts.push({ type: "text", text: m.content });
-				for (const img of m.images) {
+				if (m.content || note) {
+					parts.push({ type: "text", text: (m.content || "") + note });
+				}
+				for (const img of m.images.slice(-keep)) {
 					parts.push({ type: "image_url", image_url: { url: img.dataUrl } });
 				}
 				result.push({ role: m.role, content: parts });
 			} else {
 				result.push({ role: m.role, content: m.content });
 			}
-		}
+		});
 		return result;
 	}
 
@@ -1661,7 +1866,7 @@ export class ChatView extends ItemView {
 			: "";
 
 		try {
-			const endpoint = resolveEndpoint(this.plugin.settings);
+			const endpoint = this.endpointFor(tab);
 			const summary = await this.requestPlainCompletion(
 				endpoint,
 				"Du fasst Chat-Verläufe präzise und kompakt zusammen. Erhalte wichtige " +
