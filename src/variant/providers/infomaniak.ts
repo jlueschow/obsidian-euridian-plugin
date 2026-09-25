@@ -38,6 +38,7 @@ export const infomaniakProvider: Provider = {
 			headers: { Authorization: `Bearer ${key}` },
 			model,
 			label: "Infomaniak Euria",
+			offlineHint: "Internetverbindung prüfen.",
 		};
 	},
 	getModel: (s) => s.infomaniakModel,
@@ -51,6 +52,7 @@ export const infomaniakProvider: Provider = {
 		// Der Katalog wird ausschließlich im Settings-Tab geladen.
 	},
 	renderSettings: renderInfomaniakSettings,
+	usesSharedThinking: true,
 	thinking: (s) => s.enableThinking,
 };
 

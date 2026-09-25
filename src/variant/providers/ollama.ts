@@ -22,6 +22,7 @@ export const ollamaProvider: Provider = {
 			headers: {},
 			model,
 			label: "Ollama",
+			offlineHint: "Läuft der Server? (`ollama serve`)",
 		};
 	},
 	getModel: (s) => s.ollamaModel,
@@ -33,6 +34,7 @@ export const ollamaProvider: Provider = {
 		s.ollamaModels = names;
 	},
 	renderSettings: renderOllamaSettings,
+	usesSharedThinking: false,
 	thinking: (s) => s.ollamaThinking,
 };
 

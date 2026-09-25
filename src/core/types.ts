@@ -1,7 +1,7 @@
 /**
  * Euridian — zentrale TypeScript-Typen
  *
- * Beide Backends (Ollama lokal & Infomaniak Euria) sind OpenAI-kompatibel.
+ * Alle Backends sind OpenAI-kompatibel (Ollama, Infomaniak Euria, eigene Server).
  * Deshalb beschreiben diese Typen ein generisches OpenAI-Chat-Interface, das
  * für jedes weitere lokale/Cloud-Backend wiederverwendet werden kann.
  */
@@ -83,6 +83,8 @@ export interface ResolvedEndpoint {
 	model: string;
 	/** Menschlich lesbarer Backend-Name für Fehlermeldungen. */
 	label: string;
+	/** Hinweis, wenn der Server nicht erreichbar ist (z. B. „VPN nötig“). */
+	offlineHint?: string;
 }
 
 /** Persistente Plugin-Einstellungen (landen in data.json). */

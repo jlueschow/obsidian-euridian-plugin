@@ -31,6 +31,7 @@ export const customProvider: Provider = {
 			headers,
 			model,
 			label: "Eigener Server",
+			offlineHint: "Server-URL korrekt? Ggf. VPN/Netzwerk nötig, um den Server zu erreichen.",
 		};
 	},
 	getModel: (s) => s.customModel,
@@ -42,6 +43,7 @@ export const customProvider: Provider = {
 		s.customModels = names;
 	},
 	renderSettings: renderCustomSettings,
+	usesSharedThinking: true,
 	thinking: (s) => s.enableThinking,
 };
 

@@ -94,23 +94,22 @@ export class EuridianSettingTab extends PluginSettingTab {
 
 		const s = this.plugin.settings;
 
-		// --- Backend-Auswahl ---
-		new Setting(containerEl)
-			.setName("Backend")
-			.setDesc(
-				"Lokal über Ollama (kostenlos), Infomaniak Euria (Cloud), oder ein " +
-					"eigener OpenAI-kompatibler Server (z. B. im Hochschul-/Firmennetz)."
-			)
-			.addDropdown((dd) => {
-				for (const p of PROVIDERS) dd.addOption(p.id, p.label);
-				return dd
-					.setValue(s.backend)
-					.onChange(async (value) => {
-						s.backend = value as PluginSettings["backend"];
-						await this.plugin.saveSettings();
-						this.display(); // UI neu rendern (zeigt passende Felder)
-					});
-			});
+		// --- Backend-Auswahl (nur bei mehreren Providern) ---
+		if (PROVIDERS.length > 1) {
+			new Setting(containerEl)
+				.setName("Backend")
+				.setDesc("Welcher Dienst die Antworten liefert.")
+				.addDropdown((dd) => {
+					for (const p of PROVIDERS) dd.addOption(p.id, p.label);
+					return dd
+						.setValue(s.backend)
+						.onChange(async (value) => {
+							s.backend = value as PluginSettings["backend"];
+							await this.plugin.saveSettings();
+							this.display(); // UI neu rendern (zeigt passende Felder)
+						});
+				});
+		}
 
 		// --- Backend-spezifische Felder ---
 		providerFor(s.backend).renderSettings(this);
@@ -189,19 +188,20 @@ export class EuridianSettingTab extends PluginSettingTab {
 				ta.inputEl.addClass("euridian-settings-textarea");
 			});
 
-		new Setting(containerEl)
-			.setName("Thinking / Reasoning (Infomaniak / Eigener Server)")
-			.setDesc(
-				'Aktiviert das "Nachdenken" des Modells für Infomaniak und eigene ' +
-					"Server. Aus → schneller & günstiger (reasoning_effort: none). Für " +
-					"Ollama gibt es einen eigenen Schalter im Ollama-Bereich."
-			)
-			.addToggle((t) =>
-				t.setValue(s.enableThinking).onChange(async (v) => {
-					s.enableThinking = v;
-					await this.plugin.saveSettings();
-				})
-			);
+		if (PROVIDERS.some((p) => p.usesSharedThinking)) {
+			new Setting(containerEl)
+				.setName("Thinking / Reasoning")
+				.setDesc(
+					'Aktiviert das "Nachdenken" des Modells. Aus → schneller & ' +
+						"günstiger (reasoning_effort: none)."
+				)
+				.addToggle((t) =>
+					t.setValue(s.enableThinking).onChange(async (v) => {
+						s.enableThinking = v;
+						await this.plugin.saveSettings();
+					})
+				);
+		}
 
 		new Setting(containerEl)
 			.setName("Temperatur")

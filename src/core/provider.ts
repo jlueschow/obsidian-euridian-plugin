@@ -33,6 +33,11 @@ export interface Provider {
 	storeModels(settings: PluginSettings, names: string[]): void;
 	/** Rendert die Provider-Felder (URL, Key, Modellwahl, …) im Settings-Tab. */
 	renderSettings(host: SettingsHost): void;
-	/** Effektiver Thinking-Schalter (Ollama: eigener Default AUS). */
+	/**
+	 * true → das Backend folgt dem gemeinsamen Thinking-Schalter der Einstellungen
+	 * (`enableThinking`). false → der Provider bringt einen eigenen mit.
+	 */
+	usesSharedThinking: boolean;
+	/** Effektiver Thinking-Schalter für dieses Backend. */
 	thinking(settings: PluginSettings): boolean;
 }
