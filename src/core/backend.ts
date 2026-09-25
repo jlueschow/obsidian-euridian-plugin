@@ -7,7 +7,7 @@
  */
 
 import { Provider } from "./provider";
-import { PROVIDERS } from "./variant";
+import { PROVIDERS } from "../variant";
 import { Backend, ModelRef, PluginSettings, ResolvedEndpoint } from "./types";
 
 /** Provider zu einer Backend-ID; unbekannte IDs fallen auf den ersten zurück. */

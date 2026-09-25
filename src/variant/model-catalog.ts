@@ -15,7 +15,8 @@
  */
 
 import { requestUrl } from "obsidian";
-import { ApiModel, CatalogEntry, EuridianError, ModelPrice } from "./types";
+import { EuridianError } from "../core/types";
+import { ApiModel, CatalogEntry, ModelPrice } from "./settings";
 
 const MODELS_URL =
 	"https://api.infomaniak.com/1/ai/models?has_endpoint_contains=chat/completions";

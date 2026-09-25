@@ -18,6 +18,7 @@ import {
 	setIcon,
 } from "obsidian";
 import { EuridianApiClient } from "./api-client";
+import { VARIANT } from "../variant";
 import {
 	currentModelRef,
 	effectiveThinking,
@@ -50,7 +51,7 @@ import {
 } from "./types";
 import type EuridianPlugin from "./main";
 
-export const VIEW_TYPE_EURIDIAN = "euridian-chat-view";
+export const VIEW_TYPE = VARIANT.viewType;
 
 /** Max. Agent-Iterationen (Tool-Aufruf → Antwort) pro Nutzer-Nachricht. */
 const MAX_AGENT_ITERATIONS = 12;
@@ -161,7 +162,7 @@ interface SuggestItem {
  */
 function buildAgentSystemPrompt(useVault: boolean, useWeb: boolean): string {
 	// Absatz 1: Identität + Fähigkeiten (Sätze, einzeilig verkettet).
-	const intro: string[] = ["Du bist Euridian, ein KI-Assistent direkt in Obsidian."];
+	const intro: string[] = [VARIANT.intro];
 
 	if (useVault) {
 		intro.push(
@@ -328,11 +329,11 @@ export class ChatView extends ItemView {
 	}
 
 	getViewType(): string {
-		return VIEW_TYPE_EURIDIAN;
+		return VIEW_TYPE;
 	}
 
 	getDisplayText(): string {
-		return "Euridian Chat";
+		return `${VARIANT.name} Chat`;
 	}
 
 	getIcon(): string {
@@ -434,7 +435,7 @@ export class ChatView extends ItemView {
 
 	private buildHeader(root: HTMLElement): void {
 		const header = root.createDiv({ cls: "euridian-header" });
-		header.createSpan({ cls: "euridian-header-brand", text: "Euridian" });
+		header.createSpan({ cls: "euridian-header-brand", text: VARIANT.name });
 
 		// Modell-Schnellwechsel.
 		this.modelSelectEl = header.createEl("select", {
@@ -1451,7 +1452,7 @@ export class ChatView extends ItemView {
 			}
 		}
 
-		new Notice("Euridian: Maximale Werkzeug-Schritte erreicht.");
+		new Notice(`${VARIANT.name}: Maximale Werkzeug-Schritte erreicht.`);
 	}
 
 	// ------------------------------------------------------- Datei-Anhänge
@@ -1980,7 +1981,7 @@ export class ChatView extends ItemView {
 				: `Unerwarteter Fehler: ${String(err)}`;
 		contentEl.empty();
 		contentEl.createDiv({ cls: "euridian-error", text: `⚠ ${msg}` });
-		new Notice(`Euridian: ${msg}`, 8000);
+		new Notice(`${VARIANT.name}: ${msg}`, 8000);
 	}
 
 	// ----------------------------------------------------------- Nachrichten-UI
@@ -2086,7 +2087,7 @@ export class ChatView extends ItemView {
 	private renderEmptyState(tab: ChatTab): void {
 		tab.containerEl.empty();
 		const empty = tab.containerEl.createDiv({ cls: "euridian-empty" });
-		empty.createDiv({ cls: "euridian-empty-title", text: "Euridian Chat" });
+		empty.createDiv({ cls: "euridian-empty-title", text: `${VARIANT.name} Chat` });
 		empty.createDiv({
 			cls: "euridian-empty-sub",
 			text: this.plugin.settings.includeCurrentNote

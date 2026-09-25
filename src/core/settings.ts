@@ -5,7 +5,8 @@
 import { App, Notice, PluginSettingTab, Setting } from "obsidian";
 import { EuridianApiClient } from "./api-client";
 import { providerFor } from "./backend";
-import { PROVIDERS } from "./variant";
+import { DEFAULT_BACKEND, PROVIDERS, VARIANT } from "../variant";
+import { PROVIDER_DEFAULTS } from "../variant/settings";
 import { searchWeb } from "./web-tools";
 import { EuridianError, PluginSettings, PromptTemplate } from "./types";
 import type EuridianPlugin from "./main";
@@ -55,27 +56,11 @@ export const DEFAULT_TEMPLATES: PromptTemplate[] = [
 ];
 
 export const DEFAULT_SETTINGS: PluginSettings = {
-	backend: "ollama",
-
-	ollamaUrl: "http://localhost:11434",
-	ollamaModel: "qwen3",
-	ollamaModels: [],
-	ollamaThinking: false,
-
-	infomaniakApiKey: "",
-	infomaniakProductId: "",
-	infomaniakModel: "mistralai/Mistral-Small-4-119B-2603",
-	infomaniakCatalog: [],
-	infomaniakCatalogFetchedAt: 0,
-	infomaniakOnlyAvailable: true,
-
-	customUrl: "",
-	customApiKey: "",
-	customModel: "",
-	customModels: [],
+	...PROVIDER_DEFAULTS,
+	backend: DEFAULT_BACKEND,
 
 	includeCurrentNote: true,
-	euridianInstructionsPath: "Euria.md",
+	euridianInstructionsPath: VARIANT.defaultInstructionsPath,
 	systemPrompt: "",
 	enableThinking: true,
 	temperature: 0.7,
@@ -173,9 +158,9 @@ export class EuridianSettingTab extends PluginSettingTab {
 			);
 
 		new Setting(containerEl)
-			.setName("Euridian-Instruktionsdatei")
+			.setName(`${VARIANT.name}-Instruktionsdatei`)
 			.setDesc(
-				"Vault-Pfad zu einer kurzen Instruktionsdatei für Euridian " +
+				"Vault-Pfad zu einer kurzen Instruktionsdatei für " + VARIANT.name + " " +
 					"(z. B. Vault-Konventionen, Ordnerstruktur). Leer lassen = keine. " +
 					"Standard: Euria.md im Vault-Root. NICHT die vault-weite CLAUDE.md " +
 					"eintragen — große CLAUDE.md für andere Assistenten derailen den Agenten."

@@ -21,7 +21,7 @@ const workerPath = join(
 	projectRoot,
 	"node_modules/pdfjs-dist/legacy/build/pdf.worker.min.mjs"
 );
-const outPath = join(projectRoot, "src/pdf-worker-source.ts");
+const outPath = join(projectRoot, "src/core/pdf-worker-source.ts");
 
 const source = readFileSync(workerPath, "utf8");
 

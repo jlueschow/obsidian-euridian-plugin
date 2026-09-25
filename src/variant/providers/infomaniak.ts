@@ -1,8 +1,9 @@
-import { Provider } from "../provider";
+import { Provider } from "../../core/provider";
 import { Notice, Setting } from "obsidian";
 import { fetchCatalog } from "../model-catalog";
-import { renderConnectionTest, SettingsHost } from "../settings-host";
-import { CatalogEntry, EuridianError } from "../types";
+import { renderConnectionTest, SettingsHost } from "../../core/settings-host";
+import { EuridianError } from "../../core/types";
+import { CatalogEntry } from "../settings";
 
 export const infomaniakProvider: Provider = {
 	id: "infomaniak",
