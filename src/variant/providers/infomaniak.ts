@@ -52,6 +52,7 @@ export const infomaniakProvider: Provider = {
 		// Der Katalog wird ausschließlich im Settings-Tab geladen.
 	},
 	renderSettings: renderInfomaniakSettings,
+	renderAdvancedSettings: renderInfomaniakAdvanced,
 	usesSharedThinking: true,
 	thinking: (s) => s.enableThinking,
 };
@@ -95,6 +96,28 @@ export function renderInfomaniakSettings(host: SettingsHost): void {
 	renderConnectionTest(host);
 }
 
+/** Selten nötig: Modellliste auf verfügbare Modelle einschränken. */
+function renderInfomaniakAdvanced(host: SettingsHost): void {
+	const s = host.plugin.settings;
+	const catalog = s.infomaniakCatalog;
+	if (catalog.length === 0) return;
+	const availableCount = catalog.filter((e) => isAvailable(host, e)).length;
+
+	new Setting(host.containerEl)
+		.setName("Nur verfügbare Modelle zeigen")
+		.setDesc(
+			`${availableCount} von ${catalog.length} Modellen sind aktuell nutzbar ` +
+				`(„bald“ = von Infomaniak angekündigt, noch nicht freigeschaltet).`
+		)
+		.addToggle((t) =>
+			t.setValue(s.infomaniakOnlyAvailable).onChange(async (v) => {
+				s.infomaniakOnlyAvailable = v;
+				await host.plugin.saveSettings();
+				host.display();
+			})
+		);
+}
+
 /**
  * Modell-Auswahl für Infomaniak: Dropdown aus dem gecachten Katalog
  * (API-Modelle + Tarif-Preise), Preiszeile darunter, Aktualisieren-Button.
@@ -129,23 +152,6 @@ function renderModelSelector(host: SettingsHost): void {
 		renderRefreshButton(host);
 		return;
 	}
-
-	const availableCount = catalog.filter((e) => isAvailable(host, e)).length;
-
-	// Toggle: nur verfügbare Modelle zeigen.
-	new Setting(containerEl)
-		.setName("Nur verfügbare Modelle zeigen")
-		.setDesc(
-			`${availableCount} von ${catalog.length} Modellen sind aktuell nutzbar ` +
-				`(„bald“ = von Infomaniak angekündigt, noch nicht freigeschaltet).`
-		)
-		.addToggle((t) =>
-			t.setValue(s.infomaniakOnlyAvailable).onChange(async (v) => {
-				s.infomaniakOnlyAvailable = v;
-				await host.plugin.saveSettings();
-				host.display();
-			})
-		);
 
 	// Anzeigeliste: optional gefiltert, immer „verfügbar zuerst", dann nach Preis.
 	const displayList = catalog
