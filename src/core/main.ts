@@ -7,7 +7,7 @@
 
 import { Notice, Plugin, WorkspaceLeaf } from "obsidian";
 import { ChatView, VIEW_TYPE } from "./chat-view";
-import { VARIANT } from "../variant";
+import { migrateData, VARIANT } from "../variant";
 import { InlineEditModal } from "./inline-edit";
 import { DEFAULT_SETTINGS, EuridianSettingTab } from "./settings";
 import { PluginSettings, SessionsState } from "./types";
@@ -107,7 +107,9 @@ export default class EuridianPlugin extends Plugin {
 	 * Beides liegt in einem JSON: Settings flach, Sessions unter SESSIONS_KEY.
 	 */
 	async loadPersisted(): Promise<void> {
-		const data = ((await this.loadData()) ?? {}) as Record<string, unknown>;
+		const data = migrateData(
+			((await this.loadData()) ?? {}) as Record<string, unknown>
+		);
 		const sessions = data[SESSIONS_KEY] as SessionsState | undefined;
 		delete data[SESSIONS_KEY];
 		this.settings = Object.assign({}, DEFAULT_SETTINGS, data);

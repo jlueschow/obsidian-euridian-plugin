@@ -34,3 +34,12 @@ export const VARIANT = {
 	/** Vorbelegter Pfad der optionalen Instruktionsdatei im Vault. */
 	defaultInstructionsPath: "Euria.md",
 };
+
+/**
+ * Wird auf den rohen Inhalt von data.json angewendet, bevor Settings und
+ * Sessions daraus gelesen werden. Hier landen Umbenennungen von Feldern und
+ * Backend-IDs (auch in `__euridianSessions[].modelRef`).
+ */
+export function migrateData(data: Record<string, unknown>): Record<string, unknown> {
+	return data;
+}
