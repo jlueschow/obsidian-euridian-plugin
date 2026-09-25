@@ -75,18 +75,25 @@ async function fetchApiModels(apiKey: string): Promise<ApiModel[]> {
 		);
 	}
 
-	const data = res.json?.data;
+	const data = (
+		res.json as
+			| {
+					data?: {
+						type?: string;
+						name?: string;
+						info_status?: string;
+						max_token_input?: number | null;
+						meta?: { is_beta?: boolean };
+					}[];
+			  }
+			| undefined
+	)?.data;
 	if (!Array.isArray(data)) return [];
 
 	return data
-		.filter((m: { type?: string }) => m.type === "llm")
+		.filter((m) => m.type === "llm")
 		.map(
-			(m: {
-				name?: string;
-				info_status?: string;
-				max_token_input?: number | null;
-				meta?: { is_beta?: boolean };
-			}): ApiModel => ({
+			(m): ApiModel => ({
 				name: m.name ?? "",
 				status: m.info_status ?? "unknown",
 				beta: m.meta?.is_beta ?? false,

@@ -63,8 +63,6 @@ export function renderInfomaniakSettings(host: SettingsHost): void {
 	const { containerEl } = host;
 	const s = host.plugin.settings;
 
-	containerEl.createEl("h3", { text: "Infomaniak Euria (Cloud)" });
-
 	new Setting(containerEl)
 		.setName("API-Key")
 		.setDesc("kSuite → AI Tools → API-Token. Wird lokal in data.json gespeichert.")

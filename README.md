@@ -103,6 +103,30 @@ No telemetry. The API key is stored in plain text in Obsidian's `data.json`
 (standard Obsidian behavior). **Anything you ask about is sent to Infomaniak** —
 anonymize confidential or personal data before asking, not after.
 
+## ℹ️ Requirements and disclosures
+
+- **Account required.** You need an Infomaniak account with the AI Tools product
+  to get an API token and Product ID. Infomaniak offers a free tier; beyond that,
+  usage is billed by Infomaniak according to its price list. Euridian itself is free.
+- **Network use.** See the table under *Privacy & network use*. Nothing is sent
+  anywhere until you send a message, load the model list, or run a web search.
+- **No telemetry, no ads, no self-updates.**
+- **Not affiliated.** Euridian is an independent project and is not affiliated
+  with or endorsed by Infomaniak. "Infomaniak" and "Euria" are trademarks of
+  their respective owners.
+
+## 📦 Third-party software
+
+The plugin bundles these libraries (their licenses apply):
+
+| Library | Purpose | License |
+|---|---|---|
+| [pdf.js](https://github.com/mozilla/pdf.js) (`pdfjs-dist`) | Read PDF files | Apache-2.0 |
+| [mammoth](https://github.com/mwilliamson/mammoth.js) | Read DOCX files | BSD-2-Clause |
+| [JSZip](https://github.com/Stuk/jszip) | Read PPTX files | MIT (dual-licensed MIT or GPL-3.0-or-later) |
+
+The bundled `main.js` is minified but not obfuscated; the full source is in this repository.
+
 ## 🔧 Development
 
 ```bash
