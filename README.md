@@ -133,7 +133,8 @@ cd obsidian-euridian-plugin
 npm install
 export EURIDIAN_PLUGIN_DIR="/path/to/YourVault/.obsidian/plugins/euridian"
 npm run dev      # watch, rebuild and deploy on every change
-npm run build    # production build + deploy
+npm run build         # production build (dist/main.js)
+npm run build:deploy  # production build + copy into your vault
 ```
 
 `src/core` is shared with the sibling plugin and is the source of truth here;
