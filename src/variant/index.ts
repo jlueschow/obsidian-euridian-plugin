@@ -1,6 +1,8 @@
 /**
  * Euridian — Variante.
  *
+ * Variante: Euridian (Infomaniak Euria).
+ *
  * Vertrag zwischen gemeinsamem Kern (src/core, identisch in beiden Plugins) und
  * Variante: Der Kern importiert von hier `PROVIDERS`, `DEFAULT_BACKEND` und
  * `VARIANT`, und aus `./settings` `ProviderSettings` + `PROVIDER_DEFAULTS`.
@@ -10,18 +12,12 @@
 
 import { Provider } from "../core/provider";
 import { Backend } from "../core/types";
-import { customProvider } from "./providers/custom";
 import { infomaniakProvider } from "./providers/infomaniak";
-import { ollamaProvider } from "./providers/ollama";
 
-export const PROVIDERS: Provider[] = [
-	ollamaProvider,
-	customProvider,
-	infomaniakProvider,
-];
+export const PROVIDERS: Provider[] = [infomaniakProvider];
 
 /** Backend, das in frischen Einstellungen vorausgewählt ist. */
-export const DEFAULT_BACKEND: Backend = "ollama";
+export const DEFAULT_BACKEND: Backend = infomaniakProvider.id;
 
 /** Name, Bezeichner und Texte, in denen sich die Varianten unterscheiden. */
 export const VARIANT = {
@@ -41,5 +37,19 @@ export const VARIANT = {
  * Backend-IDs (auch in `__euridianSessions[].modelRef`).
  */
 export function migrateData(data: Record<string, unknown>): Record<string, unknown> {
-	return data;
+	// Ollama und eigene Server gibt es hier nicht mehr (Plugin „Self-hosted LLM
+	// Vault Agent“). Ihre alten Felder bleiben in data.json liegen, damit sie
+	// dorthin übernommen werden können; Backend und Chat-Verweise werden auf
+	// Infomaniak umgestellt.
+	const out: Record<string, unknown> = { ...data };
+	if (out.backend !== infomaniakProvider.id) out.backend = infomaniakProvider.id;
+	const sessions = out.__euridianSessions as
+		| { tabs?: { modelRef?: { backend?: string } }[] }
+		| undefined;
+	for (const tab of sessions?.tabs ?? []) {
+		if (tab.modelRef && tab.modelRef.backend !== infomaniakProvider.id) {
+			delete tab.modelRef;
+		}
+	}
+	return out;
 }

@@ -1,7 +1,7 @@
 {
   "name": "obsidian-euridian-plugin",
   "version": "0.3.0",
-  "description": "AI Chat in Obsidian — Ollama local or Infomaniak cloud",
+  "description": "Chat with Infomaniak Euria (Swiss cloud AI) in a sidebar, with a vault agent that reads, searches and writes your notes.",
   "main": "dist/main.js",
   "scripts": {
     "predev": "node scripts/generate-pdf-worker.mjs",
@@ -16,10 +16,9 @@
     "obsidian",
     "ai",
     "chat",
-    "ollama",
     "infomaniak",
-    "qwen3",
-    "mistral"
+    "euria",
+    "agent"
   ],
   "author": "Johannes Luschow",
   "license": "MIT",

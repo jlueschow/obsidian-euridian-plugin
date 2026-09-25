@@ -38,18 +38,6 @@ export interface CatalogEntry {
 
 /** Provider-Felder von `PluginSettings` (landen in data.json). */
 export interface ProviderSettings {
-	// --- Ollama ---
-	ollamaUrl: string;
-	ollamaModel: string;
-	/** Gescannte, lokal installierte Ollama-Modelle (von /v1/models). */
-	ollamaModels: string[];
-	/**
-	 * Thinking/Reasoning für Ollama (separat von `enableThinking`, das für die
-	 * Cloud gilt). Default AUS: lokale Reasoning-Modelle sind sonst oft minuten-
-	 * lang am „Nachdenken".
-	 */
-	ollamaThinking: boolean;
-
 	// --- Infomaniak Euria ---
 	infomaniakApiKey: string;
 	infomaniakProductId: string;
@@ -60,33 +48,14 @@ export interface ProviderSettings {
 	infomaniakCatalogFetchedAt: number;
 	/** Nur aktuell verfügbare ("ready") Modelle im Dropdown zeigen. */
 	infomaniakOnlyAvailable: boolean;
-
-	// --- Eigener Server (z. B. selbst gehosteter LLM-Endpunkt) ---
-	/** Basis-URL, z. B. "https://llm.example.org". Ohne Pfad-Suffix. */
-	customUrl: string;
-	/** Optionaler Bearer-Token. Leer = kein Authorization-Header. */
-	customApiKey: string;
-	customModel: string;
-	/** Gescannte Modelle (von /v1/models), falls der Server das unterstützt. */
-	customModels: string[];
 }
 
 /** Defaults der Provider-Felder (werden in `DEFAULT_SETTINGS` eingemischt). */
 export const PROVIDER_DEFAULTS: ProviderSettings = {
-	ollamaUrl: "http://localhost:11434",
-	ollamaModel: "qwen3",
-	ollamaModels: [],
-	ollamaThinking: false,
-
 	infomaniakApiKey: "",
 	infomaniakProductId: "",
 	infomaniakModel: "mistralai/Mistral-Small-4-119B-2603",
 	infomaniakCatalog: [],
 	infomaniakCatalogFetchedAt: 0,
 	infomaniakOnlyAvailable: true,
-
-	customUrl: "",
-	customApiKey: "",
-	customModel: "",
-	customModels: [],
 };
