@@ -15,13 +15,12 @@ list notes, read notes, search, create notes, append to notes, and **overwrite a
 note's entire content**. This means the model can modify your files.
 
 - **No delete tool exists at all** — not locked, simply not implemented.
-- **Writes require confirmation by default** (setting *Bestätigung vor
-  Schreibaktionen*): every create/append/overwrite shows a preview modal (with a
+- **Writes require confirmation by default** (setting *Confirm before writing*): every create/append/overwrite shows a preview modal (with a
   word diff for overwrites) before anything touches disk. You can turn this off,
   but it's not recommended.
 - **Overwriting a note replaces its entire content.** Anything the model doesn't
   repeat back is lost. The modal highlights this in red when content would shrink.
-- The agent can be disabled entirely (*Vault-Agent* setting) if you only want
+- The agent can be disabled entirely (*Vault agent* setting) if you only want
   plain chat.
 - Note content you ask about is sent to Infomaniak's API. See **Privacy** below.
 
@@ -35,18 +34,18 @@ note's entire content**. This means the model can modify your files.
 - 🌐 **Optional web search** — DuckDuckGo (no account) or Brave Search API, off by default
 - 📎 **Attachments** — drag & drop files/images, attach vault notes or the current
   editor selection
-- ⚡ **Slash commands** — reusable prompt templates (`/zusammenfassen`, `/übersetzen`, …)
+- ⚡ **Slash commands** — reusable prompt templates (`/summarize`, `/translate`, …)
   with placeholders `{{input}}`, `{{selection}}`, `{{note}}`, `{{title}}`
 - 🔗 **@mention** — reference any vault note from the chat input
 - ✏️ **Inline edit** — select text, edit it with AI, review a word diff, accept or reject
 - 📝 **Custom instructions file** — a short markdown file in your vault with
   conventions for the agent (see below)
 
-> **Language:** the plugin's interface is currently in German.
+> **Language:** the interface is in English and follows Obsidian's language setting; a German translation is included. Built-in prompt templates and prompts to the model are localized the same way.
 
 ## 🤖 Using the vault agent
 
-With **Vault-Agent** enabled (default) and a model that supports function calling,
+With **Vault agent** enabled (default) and a model that supports function calling,
 just ask naturally:
 
 > "Summarize the note 'Project X'"
@@ -64,7 +63,7 @@ parameters) tend to hallucinate results instead of calling tools.
 Adds a `search_web` tool. It is **off by default**, independent of the vault agent, and
 always runs **locally through your own internet connection** — so it also works
 when your model runs on a server without internet access. Enable it in Settings
-→ *Websuche aktivieren* and pick a provider:
+→ *Enable web search* and pick a provider:
 
 - **DuckDuckGo** (default, no account or key) — reads DuckDuckGo's HTML results
   page. This is unofficial, so it can break or be blocked with a bot check after
@@ -85,8 +84,8 @@ another assistant can overwhelm smaller models so that they stop calling tools.
    [infomaniak.com/en/hosting/ai-services](https://infomaniak.com/en/hosting/ai-services)
    (Account → AI Tools → API token).
 2. Enable the plugin under **Settings → Community plugins**, open the Euridian
-   settings, paste the API key and Product ID, and click **Modelle & Preise laden**.
-3. Open the chat: Command palette → `Euridian: Chat öffnen`, or use the ribbon icon.
+   settings, paste the API key and Product ID, and click **Load models and prices**.
+3. Open the chat: Command palette → `Euridian: open chat`, or use the ribbon icon.
 
 ## 🔐 Privacy & network use
 

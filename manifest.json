@@ -2,7 +2,7 @@
   "id": "euridian",
   "name": "Euridian",
   "version": "0.4.0",
-  "minAppVersion": "1.7.2",
+  "minAppVersion": "1.8.0",
   "description": "Chat with Infomaniak Euria (Swiss cloud AI) in a sidebar, with a vault agent that reads, searches and writes your notes.",
   "author": "Johannes Luschow",
   "authorUrl": "https://johannesluschow.com",

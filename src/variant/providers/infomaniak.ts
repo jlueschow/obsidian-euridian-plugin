@@ -2,6 +2,7 @@ import { Provider } from "../../core/provider";
 import { Notice, Setting } from "obsidian";
 import { fetchCatalog } from "../model-catalog";
 import { renderConnectionTest, SettingsHost } from "../../core/settings-host";
+import { t } from "../../core/i18n";
 import { EuridianError } from "../../core/types";
 import { CatalogEntry } from "../settings";
 
@@ -15,19 +16,19 @@ export const infomaniakProvider: Provider = {
 		if (!key) {
 			throw new EuridianError(
 				"auth",
-				"Infomaniak API-Key fehlt — in den Einstellungen eintragen."
+				t("Infomaniak API key is missing. Enter it in the settings.")
 			);
 		}
 		if (!productId) {
 			throw new EuridianError(
 				"bad_request",
-				"Infomaniak Product-ID fehlt — in den Einstellungen eintragen."
+				t("Infomaniak product ID is missing. Enter it in the settings.")
 			);
 		}
 		if (!model) {
 			throw new EuridianError(
 				"bad_request",
-				"Kein Infomaniak-Modell gewählt — in den Einstellungen festlegen."
+				t("No Infomaniak model selected. Choose one in the settings.")
 			);
 		}
 		const base = "https://api.infomaniak.com";
@@ -38,7 +39,7 @@ export const infomaniakProvider: Provider = {
 			headers: { Authorization: `Bearer ${key}` },
 			model,
 			label: "Infomaniak Euria",
-			offlineHint: "Internetverbindung prüfen.",
+			offlineHint: t("Check your internet connection."),
 		};
 	},
 	getModel: (s) => s.infomaniakModel,
@@ -64,30 +65,30 @@ export function renderInfomaniakSettings(host: SettingsHost): void {
 	const s = host.plugin.settings;
 
 	new Setting(containerEl)
-		.setName("API-Key")
-		.setDesc("kSuite → AI Tools → API-Token. Wird lokal in data.json gespeichert.")
-		.addText((t) => {
-			t.setPlaceholder("Bearer-Token")
+		.setName(t("API key"))
+		.setDesc(t("kSuite → AI Tools → API token. Stored locally in data.json."))
+		.addText((tg) => {
+			tg.setPlaceholder(t("Bearer token"))
 				.setValue(s.infomaniakApiKey)
 				.onChange(async (v) => {
 					s.infomaniakApiKey = v.trim();
 					await host.plugin.saveSettings();
 				});
 			// Key nicht im Klartext anzeigen.
-			t.inputEl.type = "password";
+			tg.inputEl.type = "password";
 		});
 
 	new Setting(containerEl)
-		.setName("Product-ID")
-		.setDesc("Numerische ID deines AI-Tools-Produkts (GET /1/ai).")
-		.addText((t) => {
-			t.setPlaceholder("z. B. 12345")
+		.setName(t("Product ID"))
+		.setDesc(t("Numeric ID of your AI Tools product (GET /1/ai)."))
+		.addText((tg) => {
+			tg.setPlaceholder(t("e.g. 12345"))
 				.setValue(s.infomaniakProductId)
 				.onChange(async (v) => {
 					s.infomaniakProductId = v.trim();
 					await host.plugin.saveSettings();
 				});
-			t.inputEl.autocomplete = "off";
+			tg.inputEl.autocomplete = "off";
 		});
 
 	renderModelSelector(host);
@@ -102,13 +103,15 @@ function renderInfomaniakAdvanced(host: SettingsHost): void {
 	const availableCount = catalog.filter((e) => isAvailable(host, e)).length;
 
 	new Setting(host.containerEl)
-		.setName("Nur verfügbare Modelle zeigen")
+		.setName(t("Show only available models"))
 		.setDesc(
-			`${availableCount} von ${catalog.length} Modellen sind aktuell nutzbar ` +
-				`(„bald“ = von Infomaniak angekündigt, noch nicht freigeschaltet).`
+			t(
+				'{available} of {total} models are currently usable ("soon" = announced by Infomaniak, not yet enabled).',
+				{ available: availableCount, total: catalog.length }
+			)
 		)
-		.addToggle((t) =>
-			t.setValue(s.infomaniakOnlyAvailable).onChange(async (v) => {
+		.addToggle((tg) =>
+			tg.setValue(s.infomaniakOnlyAvailable).onChange(async (v) => {
 				s.infomaniakOnlyAvailable = v;
 				await host.plugin.saveSettings();
 				host.display();
@@ -134,18 +137,16 @@ function renderModelSelector(host: SettingsHost): void {
 	if (catalog.length === 0) {
 		// Noch kein Katalog → Freitext, damit der Nutzer nicht blockiert ist.
 		new Setting(containerEl)
-			.setName("Modell")
-			.setDesc(
-				"Noch keine Modell-Liste geladen. Unten „Modelle & Preise laden“ klicken."
-			)
-			.addText((t) => {
-				t.setPlaceholder("mistralai/Mistral-Small-4-119B-2603")
+			.setName(t("Model"))
+			.setDesc(t("No model list loaded yet. Click \"Load models and prices\" below."))
+			.addText((tg) => {
+				tg.setPlaceholder("mistralai/Mistral-Small-4-119B-2603")
 					.setValue(s.infomaniakModel)
 					.onChange(async (v) => {
 						s.infomaniakModel = v.trim();
 						await host.plugin.saveSettings();
 					});
-				t.inputEl.autocomplete = "off";
+				tg.inputEl.autocomplete = "off";
 			});
 		renderRefreshButton(host);
 		return;
@@ -167,8 +168,8 @@ function renderModelSelector(host: SettingsHost): void {
 	const priceEl = createDiv({ cls: "euridian-price-info" });
 
 	new Setting(containerEl)
-		.setName("Modell")
-		.setDesc("Live aus deinem Infomaniak-Konto + Tarif-Seite.")
+		.setName(t("Model"))
+		.setDesc(t("Live from your Infomaniak account and the price page."))
 		.addDropdown((dd) => {
 			for (const entry of displayList) {
 				dd.addOption(entry.name, modelLabel(host, entry));
@@ -176,7 +177,7 @@ function renderModelSelector(host: SettingsHost): void {
 			// Falls das gespeicherte Modell nicht in der Anzeigeliste ist
 			// (gefiltert oder nicht im Katalog), trotzdem als Option anbieten.
 			if (!displayList.some((e) => e.name === s.infomaniakModel)) {
-				dd.addOption(s.infomaniakModel, `${s.infomaniakModel} (gewählt)`);
+				dd.addOption(s.infomaniakModel, t("{model} (selected)", { model: s.infomaniakModel }));
 			}
 			dd.setValue(s.infomaniakModel).onChange(async (v) => {
 				s.infomaniakModel = v;
@@ -194,7 +195,7 @@ function renderModelSelector(host: SettingsHost): void {
 /** Dropdown-Label inkl. Status-/Beta-Markierung. */
 function modelLabel(host: SettingsHost, entry: CatalogEntry): string {
 	const tags: string[] = [];
-	if (entry.status !== "ready") tags.push("bald");
+	if (entry.status !== "ready") tags.push(t("soon"));
 	if (entry.beta) tags.push("beta");
 	return tags.length ? `${entry.name} · ${tags.join(", ")}` : entry.name;
 }
@@ -209,19 +210,23 @@ function updatePriceLine(host: SettingsHost, el: HTMLElement, modelName: string)
 	if (!entry?.price) {
 		el.createSpan({
 			cls: "euridian-price-muted",
-			text: "Preis nicht hinterlegt.",
+			text: t("Price not available."),
 		});
 		return;
 	}
 
 	const p = entry.price;
 	el.createSpan({
-		text: `Input: ${p.currency} ${p.inputPerM.toFixed(2)} · Output: ${p.currency} ${p.outputPerM.toFixed(2)} — je 1M Token`,
+		text: t("Input: {currency} {input} · Output: {currency} {output} per 1M tokens", {
+			currency: p.currency,
+			input: p.inputPerM.toFixed(2),
+			output: p.outputPerM.toFixed(2),
+		}),
 	});
 	if (entry.maxTokenInput) {
 		el.createSpan({
 			cls: "euridian-price-muted",
-			text: `  ·  Kontext: ${entry.maxTokenInput.toLocaleString("de-DE")} Token`,
+			text: `  ·  ${t("Context: {count} tokens", { count: entry.maxTokenInput.toLocaleString() })}`,
 		});
 	}
 }
@@ -231,21 +236,21 @@ function renderRefreshButton(host: SettingsHost): void {
 	const s = host.plugin.settings;
 	const desc =
 		s.infomaniakCatalogFetchedAt > 0
-			? `Zuletzt: ${new Date(s.infomaniakCatalogFetchedAt).toLocaleString("de-DE")}`
-			: "Noch nie geladen.";
+			? t("Last loaded: {date}", { date: new Date(s.infomaniakCatalogFetchedAt).toLocaleString() })
+			: t("Never loaded.");
 
 	new Setting(host.containerEl)
-		.setName("Modelle & Preise laden")
+		.setName(t("Load models and prices"))
 		.setDesc(desc)
 		.addButton((btn) =>
 			btn
-				.setButtonText("Aktualisieren")
+				.setButtonText(t("Refresh"))
 				.onClick(async () => {
 					if (!s.infomaniakApiKey.trim()) {
-						new Notice("Erst den API-Key eintragen.");
+						new Notice(t("Enter the API key first."));
 						return;
 					}
-					btn.setDisabled(true).setButtonText("Lade …");
+					btn.setDisabled(true).setButtonText(t("Loading …"));
 					try {
 						const catalog = await fetchCatalog(s.infomaniakApiKey.trim());
 						s.infomaniakCatalog = catalog;
@@ -256,16 +261,16 @@ function renderRefreshButton(host: SettingsHost): void {
 							if (firstReady) s.infomaniakModel = firstReady.name;
 						}
 						await host.plugin.saveSettings();
-						new Notice(`✓ ${catalog.length} Modell(e) geladen.`);
+						new Notice(t("✓ {count} model(s) loaded.", { count: catalog.length }));
 						host.display(); // UI mit Dropdown neu rendern
 					} catch (err) {
 						const msg =
 							err instanceof EuridianError
 								? err.message
-								: `Unbekannter Fehler: ${String(err)}`;
+								: t("Unknown error: {error}", { error: String(err) });
 						new Notice(`✕ ${msg}`, 8000);
 					} finally {
-						btn.setDisabled(false).setButtonText("Aktualisieren");
+						btn.setDisabled(false).setButtonText(t("Refresh"));
 					}
 				})
 		);

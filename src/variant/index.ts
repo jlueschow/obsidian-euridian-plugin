@@ -26,7 +26,7 @@ export const VARIANT = {
 	/** Eindeutiger View-Typ — muss sich zwischen den Plugins unterscheiden. */
 	viewType: "euridian-chat-view",
 	/** Selbstvorstellung im System-Prompt. */
-	intro: "Du bist Euridian, ein KI-Assistent direkt in Obsidian.",
+	intro: "You are Euridian, an AI assistant inside Obsidian.",
 	/** Vorbelegter Pfad der optionalen Instruktionsdatei im Vault. */
 	defaultInstructionsPath: "Euria.md",
 };

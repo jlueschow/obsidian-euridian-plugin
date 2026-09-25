@@ -15,6 +15,7 @@
  */
 
 import { requestUrl } from "obsidian";
+import { t } from "../core/i18n";
 import { EuridianError } from "../core/types";
 import { ApiModel, CatalogEntry, ModelPrice } from "./settings";
 
@@ -56,21 +57,21 @@ async function fetchApiModels(apiKey: string): Promise<ApiModel[]> {
 	} catch {
 		throw new EuridianError(
 			"offline",
-			"Infomaniak nicht erreichbar — Internetverbindung prüfen."
+			t("Infomaniak is not reachable. Check your internet connection.")
 		);
 	}
 
 	if (res.status === 401 || res.status === 403) {
 		throw new EuridianError(
 			"auth",
-			"Infomaniak: API-Key ungültig — bitte prüfen.",
+			t("Infomaniak: invalid API key. Please check it."),
 			res.status
 		);
 	}
 	if (res.status >= 400) {
 		throw new EuridianError(
 			"unknown",
-			`Infomaniak: HTTP ${res.status} beim Abrufen der Modelle.`,
+			t("Infomaniak: HTTP {status} while fetching the models.", { status: res.status }),
 			res.status
 		);
 	}
